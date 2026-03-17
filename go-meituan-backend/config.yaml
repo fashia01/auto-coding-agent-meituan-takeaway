@@ -1,5 +1,5 @@
 server:
-  port: 8080
+  port: 3000
   mode: debug  # debug, release
 
 database:
@@ -33,5 +33,5 @@ wechat:
   secret: ""
 
 mock_payment: true  # 模拟支付模式，开发环境设为 true
-notify_url: "http://localhost:8080/v1/notify_url"
-syn_notify_url: "http://localhost:8080"
+notify_url: "http://localhost:3000/v1/notify_url"
+syn_notify_url: "http://localhost:3000"

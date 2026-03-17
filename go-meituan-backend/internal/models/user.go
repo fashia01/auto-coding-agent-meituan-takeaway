@@ -27,4 +27,5 @@ type User struct {
 	City        string           `bson:"city" json:"city"`
 	Phone       string           `bson:"phone" json:"phone,omitempty"`
 	CreateTime  time.Time        `bson:"create_time" json:"create_time"`
+	CreatedAt   time.Time        `bson:"created_at" json:"created_at"`
 }

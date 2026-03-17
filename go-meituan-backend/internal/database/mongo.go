@@ -29,6 +29,7 @@ const (
 	CollectionPayments = "payments"
 	CollectionFootprints = "footprints"
 	CollectionCollections = "collections"
+	CollectionCart      = "cart"
 	CollectionIDs       = "ids"
 )
 
@@ -85,6 +86,7 @@ func initCollections() error {
 		CollectionPayments,
 		CollectionFootprints,
 		CollectionCollections,
+		CollectionCart,
 		CollectionIDs,
 	}
 

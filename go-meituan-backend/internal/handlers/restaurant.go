@@ -104,7 +104,7 @@ func GetRestaurants(c *gin.Context) {
 
 // GetRestaurant 获取指定餐馆
 func GetRestaurant(c *gin.Context) {
-	id := c.Param("id")
+	id := c.Param("restaurant_id")
 
 	coll := database.GetCollection(database.CollectionRestaurants)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
