@@ -8,13 +8,14 @@ import (
 )
 
 type Config struct {
-	Server   ServerConfig   `yaml:"server"`
-	Database DatabaseConfig `yaml:"database"`
-	Redis    RedisConfig    `yaml:"redis"`
-	Session  SessionConfig  `yaml:"session"`
-	Qiniu    QiniuConfig    `yaml:"qiniu"`
-	Gaode    GaodeConfig    `yaml:"gaode"`
-	Wechat   WechatConfig   `yaml:"wechat"`
+	Server       ServerConfig   `yaml:"server"`
+	Database     DatabaseConfig `yaml:"database"`
+	Redis        RedisConfig    `yaml:"redis"`
+	Session      SessionConfig  `yaml:"session"`
+	Qiniu        QiniuConfig    `yaml:"qiniu"`
+	Gaode        GaodeConfig    `yaml:"gaode"`
+	Wechat       WechatConfig   `yaml:"wechat"`
+	MockPayment bool           `yaml:"mock_payment"`
 }
 
 type ServerConfig struct {
