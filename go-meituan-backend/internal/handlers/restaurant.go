@@ -19,7 +19,8 @@ import (
 func GetRestaurants(c *gin.Context) {
 	lat := c.Query("lat")
 	lng := c.Query("lng")
-	sortType := c.DefaultQuery("sort", "1") // 1: 智能排序, 2: 销量最高, 3: 距离最近
+	// 支持 sort 和 sort_type 两种参数名
+	sortType := c.DefaultQuery("sort", c.DefaultQuery("sort_type", ""))
 	offset := c.DefaultQuery("offset", "0")
 	limit := c.DefaultQuery("limit", "20")
 

@@ -117,7 +117,7 @@ func registerRoutes(r *gin.Engine) {
 		v1.POST("/wxorder", middleware.Auth(), handlers.MakeWXOrder)
 		v1.GET("/orders", middleware.Auth(), handlers.GetOrders)
 		v1.GET("/my_restaurant_order", middleware.AuthAdmin(), handlers.GetMyRestaurantOrder)
-		v1.GET("/order/:order_id", handlers.GetOrder)
+		v1.GET("/order/:order_id", middleware.Auth(), handlers.GetOrder)
 		v1.POST("/order_confirm", middleware.AuthAdmin(), handlers.ConfirmOrder)
 
 		// 支付相关
@@ -140,6 +140,7 @@ func registerRoutes(r *gin.Engine) {
 	admin := r.Group("/admin")
 	{
 		// 用户相关
+		admin.POST("/login", handlers.UserLogin) // 兼容前端
 		admin.POST("/user_login", handlers.UserLogin)
 		admin.POST("/admin_login", handlers.AdminLogin)
 		admin.POST("/wechat_login", handlers.WechatLogin)

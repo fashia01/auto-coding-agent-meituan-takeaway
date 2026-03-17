@@ -5,7 +5,7 @@ server:
 database:
   host: localhost
   port: 27017
-  name: meituan
+  name: takeaway
   username: ""
   password: ""
 
