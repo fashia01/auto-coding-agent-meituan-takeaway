@@ -6,6 +6,8 @@ import (
 
 	"github.com/auto-coding-agent/meituan-backend/internal/config"
 	"github.com/auto-coding-agent/meituan-backend/internal/database"
+	"github.com/auto-coding-agent/meituan-backend/internal/handlers"
+	"github.com/auto-coding-agent/meituan-backend/internal/middleware"
 	"github.com/gin-gonic/gin"
 )
 
@@ -46,7 +48,10 @@ func registerRoutes(r *gin.Engine) {
 		c.JSON(200, gin.H{"status": "ok"})
 	})
 
-	// API 路由组 (占位，后续 Task 实现)
+	// Session 中间件
+	r.Use(middleware.Session())
+
+	// API 路由组 (占位)
 	_ = r.Group("/v1")
 	// {
 	// 	位置服务
@@ -66,21 +71,26 @@ func registerRoutes(r *gin.Engine) {
 	// 	api.GET("/listen_status", middleware.Auth(), handlers.ListenStatus)
 	// }
 
-	// 管理后台路由组 (占位，后续 Task 实现)
-	_ = r.Group("/admin")
-	// {
-	// 	用户相关
-	// 	admin.POST("/user_login", handlers.UserLogin)
-	// 	admin.POST("/admin_login", handlers.AdminLogin)
-	// 	admin.POST("/logout", handlers.Logout)
-	// 	admin.GET("/user_info", middleware.Auth(), handlers.GetUserInfo)
-	// 	地址相关
-	// 	admin.POST("/address", middleware.Auth(), handlers.AddAddress)
-	// 	admin.GET("/all_address", middleware.Auth(), handlers.GetAllAddress)
-	// 	admin.DELETE("/address", middleware.Auth(), handlers.DeleteAddress)
-	// }
+	// 管理后台路由组
+	admin := r.Group("/admin")
+	{
+		// 用户相关
+		admin.POST("/user_login", handlers.UserLogin)
+		admin.POST("/admin_login", handlers.AdminLogin)
+		admin.POST("/logout", handlers.Logout)
+		admin.GET("/user_info", middleware.Auth(), handlers.GetUserInfo)
+		admin.POST("/user_info", middleware.AuthUser(), handlers.SetUserInfo)
+		admin.POST("/change_avatar", middleware.AuthAdmin(), handlers.ChangeAvatar)
 
-	// 统计路由组 (占位，后续 Task 实现)
+		// 地址相关 (占位)
+		// admin.POST("/address", middleware.Auth(), handlers.AddAddress)
+		// admin.GET("/all_address", middleware.Auth(), handlers.GetAllAddress)
+		// admin.GET("/address", middleware.AuthAdmin(), handlers.GetAddress)
+		// admin.POST("/update_address", middleware.Auth(), handlers.UpdateAddress)
+		// admin.DELETE("/address", middleware.Auth(), handlers.DeleteAddress)
+	}
+
+	// 统计路由组 (占位)
 	// statistics := r.Group("/statistics")
 	// {
 	// 	statistics.GET("/order_count", middleware.AuthAdmin(), handlers.OrderCount)

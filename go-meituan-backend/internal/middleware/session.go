@@ -3,7 +3,6 @@ package middleware
 import (
 	"crypto/rand"
 	"encoding/base64"
-	"fmt"
 	"net/http"
 	"sync"
 	"time"
