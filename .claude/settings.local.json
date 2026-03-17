@@ -1,0 +1,38 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install:*)",
+      "Bash(curl:*)",
+      "Bash(lsof:*)",
+      "Bash(mongosh:*)",
+      "mcp__playwright__browser_navigate",
+      "mcp__playwright__browser_click",
+      "mcp__playwright__browser_type",
+      "mcp__playwright__browser_snapshot",
+      "mcp__playwright__browser_console_messages",
+      "mcp__playwright__browser_network_requests",
+      "mcp__playwright__browser_wait_for",
+      "mcp__playwright__browser_evaluate",
+      "mcp__playwright__browser_take_screenshot",
+      "mcp__zai-mcp-server__analyze_image",
+      "Bash(ps:*)",
+      "mcp__playwright__browser_run_code",
+      "mcp__playwright__browser_fill_form",
+      "Bash(pkill:*)",
+      "mcp__playwright__browser_press_key",
+      "Bash(xargs:*)",
+      "Bash(node --experimental-specifier-resolution=node app.js:*)",
+      "mcp__playwright__browser_tabs",
+      "mcp__playwright__browser_close",
+      "Bash(npm run)",
+      "Bash(node -e:*)",
+      "Bash(python3 -m json.tool:*)",
+      "Bash(SESSION=\"s%3Ajdm24hlL91qCUAY9FhQMozsom8JAFEsD.PtNanMQZxqOjG2wRUR5ZBfBytTQ9olEIFzy%2BlmD0jrg\")",
+      "mcp__playwright__browser_install",
+      "Bash(npm start)",
+      "Bash(npm run dev)",
+      "WebSearch",
+      "mcp__web-reader__webReader"
+    ]
+  }
+}
