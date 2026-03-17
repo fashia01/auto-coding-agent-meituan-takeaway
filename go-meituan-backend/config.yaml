@@ -1,0 +1,37 @@
+server:
+  port: 8080
+  mode: debug  # debug, release
+
+database:
+  host: localhost
+  port: 27017
+  name: meituan
+  username: ""
+  password: ""
+
+redis:
+  host: localhost
+  port: 6379
+  password: ""
+  db: 0
+
+session:
+  secret: meituan-session-secret-key
+  max_age: 86400  # 24 hours in seconds
+
+qiniu:
+  access_key: ""
+  secret_key: ""
+  bucket: ""
+  domain: ""
+
+gaode:
+  key: ""  # 高德地图 API Key
+
+wechat:
+  appid: ""
+  secret: ""
+
+mock_payment: true  # 模拟支付模式，开发环境设为 true
+notify_url: "http://localhost:8080/v1/notify_url"
+syn_notify_url: "http://localhost:8080"
