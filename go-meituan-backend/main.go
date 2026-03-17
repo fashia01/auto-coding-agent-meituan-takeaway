@@ -82,12 +82,12 @@ func registerRoutes(r *gin.Engine) {
 		admin.POST("/user_info", middleware.AuthUser(), handlers.SetUserInfo)
 		admin.POST("/change_avatar", middleware.AuthAdmin(), handlers.ChangeAvatar)
 
-		// 地址相关 (占位)
-		// admin.POST("/address", middleware.Auth(), handlers.AddAddress)
-		// admin.GET("/all_address", middleware.Auth(), handlers.GetAllAddress)
-		// admin.GET("/address", middleware.AuthAdmin(), handlers.GetAddress)
-		// admin.POST("/update_address", middleware.Auth(), handlers.UpdateAddress)
-		// admin.DELETE("/address", middleware.Auth(), handlers.DeleteAddress)
+		// 地址相关
+		admin.POST("/address", middleware.Auth(), handlers.AddAddress)
+		admin.GET("/all_address", middleware.Auth(), handlers.GetAllAddress)
+		admin.GET("/address", middleware.AuthAdmin(), handlers.GetAddress)
+		admin.POST("/update_address", middleware.Auth(), handlers.UpdateAddress)
+		admin.DELETE("/address", middleware.Auth(), handlers.DeleteAddress)
 	}
 
 	// 统计路由组 (占位)
