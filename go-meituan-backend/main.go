@@ -59,10 +59,12 @@ func registerRoutes(r *gin.Engine) {
 		v1.GET("/location", handlers.Location)
 		v1.GET("/detailLocation", handlers.DetailLocation)
 
-		// 餐馆相关 (占位)
-		// v1.GET("/restaurants", handlers.GetRestaurants)
-		// v1.GET("/restaurant/:id", handlers.GetRestaurant)
-		// v1.POST("/restaurant", middleware.AuthAdmin(), handlers.AddRestaurant)
+		// 餐馆相关
+		v1.GET("/restaurants", handlers.GetRestaurants)
+		v1.GET("/all_restaurant", handlers.GetAllRestaurant)
+		v1.GET("/restaurant/:id", handlers.GetRestaurant)
+		v1.POST("/restaurant", middleware.AuthAdmin(), handlers.AddRestaurant)
+		v1.GET("/search/restaurant", handlers.SearchRestaurant)
 
 		// 订单相关 (占位)
 		// v1.POST("/order", middleware.Auth(), handlers.MakeOrder)
