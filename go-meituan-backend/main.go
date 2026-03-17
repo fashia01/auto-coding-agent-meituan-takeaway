@@ -51,25 +51,28 @@ func registerRoutes(r *gin.Engine) {
 	// Session 中间件
 	r.Use(middleware.Session())
 
-	// API 路由组 (占位)
-	_ = r.Group("/v1")
-	// {
-	// 	位置服务
-	// 	api.GET("/suggestion", handlers.Suggestion)
-	// 	api.GET("/location", handlers.Location)
-	// 	api.GET("/detailLocation", handlers.DetailLocation)
-	// 	餐馆相关
-	// 	api.GET("/restaurants", handlers.GetRestaurants)
-	// 	api.GET("/restaurant/:id", handlers.GetRestaurant)
-	// 	api.POST("/restaurant", middleware.AuthAdmin(), handlers.AddRestaurant)
-	// 	订单相关
-	// 	api.POST("/order", middleware.Auth(), handlers.MakeOrder)
-	// 	api.GET("/orders", middleware.Auth(), handlers.GetOrders)
-	// 	支付相关
-	// 	api.POST("/pay", middleware.Auth(), handlers.InitPay)
-	// 	api.POST("/notify_url", handlers.PayNotice)
-	// 	api.GET("/listen_status", middleware.Auth(), handlers.ListenStatus)
-	// }
+	// API 路由组
+	v1 := r.Group("/v1")
+	{
+		// 位置服务
+		v1.GET("/suggestion", handlers.Suggestion)
+		v1.GET("/location", handlers.Location)
+		v1.GET("/detailLocation", handlers.DetailLocation)
+
+		// 餐馆相关 (占位)
+		// v1.GET("/restaurants", handlers.GetRestaurants)
+		// v1.GET("/restaurant/:id", handlers.GetRestaurant)
+		// v1.POST("/restaurant", middleware.AuthAdmin(), handlers.AddRestaurant)
+
+		// 订单相关 (占位)
+		// v1.POST("/order", middleware.Auth(), handlers.MakeOrder)
+		// v1.GET("/orders", middleware.Auth(), handlers.GetOrders)
+
+		// 支付相关 (占位)
+		// v1.POST("/pay", middleware.Auth(), handlers.InitPay)
+		// v1.POST("/notify_url", handlers.PayNotice)
+		// v1.GET("/listen_status", middleware.Auth(), handlers.ListenStatus)
+	}
 
 	// 管理后台路由组
 	admin := r.Group("/admin")
