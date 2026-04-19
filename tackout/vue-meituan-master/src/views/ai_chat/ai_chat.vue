@@ -87,7 +87,7 @@
         this.isLoading = true
         this.$nextTick(() => this.scrollToBottom())
 
-        // 构建发送给后端的消息体（只传 role/content，过滤空 content 的 assistant 消息）
+        // 构建发送给后端的消息体（只传 role/content，过滤空 content 的 assistant 占位消息）
         const payload = this.messages
           .filter(m => !(m.role === 'assistant' && !m.content))
           .map(m => ({ role: m.role, content: m.content }))
@@ -97,7 +97,7 @@
             method: 'POST',
             credentials: 'include',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ messages: payload.slice(0, -1) }) // 不传空占位消息
+            body: JSON.stringify({ messages: payload }) // filter 已过滤空占位，无需再 slice
           })
 
           if (!response.ok) {
@@ -108,9 +108,10 @@
           const decoder = new TextDecoder()
           let buffer = ''
 
-          while (true) {
+          let reading = true
+          while (reading) {
             const { done, value } = await reader.read()
-            if (done) break
+            if (done) { reading = false; break }
 
             buffer += decoder.decode(value, { stream: true })
             const lines = buffer.split('\n')

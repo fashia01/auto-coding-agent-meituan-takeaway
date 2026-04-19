@@ -172,18 +172,21 @@ const router = new Router({
 
 // 处理 NavigationDuplicated 错误
 router.onError((error) => {
-  const pattern = /Loading chunk (\d)+ failed/g;
-  const isChunkLoadFailed = error.message.match(pattern);
-  const targetPath = router.history.pending.fullPath;
-
-  if (isChunkLoadFailed) {
-    router.replace(targetPath);
-  }
-
   // 忽略 NavigationDuplicated 错误
   if (error.name === 'NavigationDuplicated') {
     console.log('NavigationDuplicated ignored');
     return;
+  }
+
+  const pattern = /Loading chunk (\d)+ failed/g;
+  const isChunkLoadFailed = error.message.match(pattern);
+
+  if (isChunkLoadFailed) {
+    // router.history.pending 在无导航进行时为 null，需加保护
+    const targetPath = router.history.pending && router.history.pending.fullPath;
+    if (targetPath) {
+      router.replace(targetPath);
+    }
   }
 });
 
