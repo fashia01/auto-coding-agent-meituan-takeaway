@@ -174,7 +174,6 @@ const router = new Router({
 router.onError((error) => {
   // 忽略 NavigationDuplicated 错误
   if (error.name === 'NavigationDuplicated') {
-    console.log('NavigationDuplicated ignored');
     return;
   }
 
