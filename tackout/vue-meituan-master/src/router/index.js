@@ -154,6 +154,11 @@ const router = new Router({
       component: r => require.ensure([], () => r(require('@/views/order/order_detail'), 'OrderDetail'))
     },
     {
+      path: '/ai_chat',
+      name: 'AI智能推荐',
+      component: r => require.ensure([], () => r(require('@/views/ai_chat/ai_chat')), 'AiChat')
+    },
+    {
       path: '/error',
       name: '找不到该页面',
       component: r => require.ensure([], () => r(require('@/views/404/error'), 'Error'))

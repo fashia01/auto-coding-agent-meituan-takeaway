@@ -165,6 +165,9 @@ class Restaurant extends BaseClass {
 
   //获取餐馆时计算距离
   async getDistance(restaurants, lng, lat) {
+    // 配送范围阈值（km）：超出此距离标记为不可配送
+    const DELIVERY_RADIUS_KM = 30;
+
     for (let i = 0; i < restaurants.length; i++) {
       let result = null;
       result = await this.fetch('http://restapi.amap.com/v3/direction/driving', {
@@ -188,16 +191,52 @@ class Restaurant extends BaseClass {
           key: this.gaode_key
         });
       }
-      if (result.status !== '1') {        //请求出错时  设置给假数据 主要是防止高德给的每天请求次数用过
-        restaurants[i].distance = '10km';
-        restaurants[i].delivery_time_tip = '50分钟';
+
+      if (result.status !== '1') {
+        // 高德接口失败时，用 Haversine 公式计算直线距离作为兜底
+        const distKm = this.haversineDistance(
+          parseFloat(lat), parseFloat(lng),
+          parseFloat(restaurants[i].lat), parseFloat(restaurants[i].lng)
+        );
+        if (!isNaN(distKm)) {
+          const displayKm = distKm.toFixed(1);
+          restaurants[i].distance = displayKm + 'km';
+          restaurants[i].distance_km = distKm;
+          // 直线距离 * 1.4 估算路程（城市系数），超过阈值即不可配送
+          restaurants[i].deliverable = (distKm * 1.4) <= DELIVERY_RADIUS_KM;
+          restaurants[i].delivery_time_tip = restaurants[i].deliverable
+            ? Math.round(distKm * 1.4 * 3 + 10) + '分钟'  // 粗估：每km约3分钟+10分钟备餐
+            : '超出配送范围';
+        } else {
+          restaurants[i].distance = '未知';
+          restaurants[i].distance_km = 0;
+          restaurants[i].deliverable = true;
+          restaurants[i].delivery_time_tip = '约50分钟';
+        }
       } else {
         let element = result['route']['paths'][0];
-        restaurants[i].distance = (element.distance / 1000 ).toFixed(1) + 'km'        //计算距离
-        restaurants[i].delivery_time_tip = (element.duration / 60).toFixed(1) + '分钟'
+        const distKm = parseFloat((element.distance / 1000).toFixed(1));
+        restaurants[i].distance = distKm + 'km';
+        restaurants[i].distance_km = distKm;
+        restaurants[i].deliverable = distKm <= DELIVERY_RADIUS_KM;
+        restaurants[i].delivery_time_tip = restaurants[i].deliverable
+          ? (element.duration / 60).toFixed(0) + '分钟'
+          : '超出配送范围';
       }
     }
     return restaurants;
+  }
+
+  // Haversine 直线距离公式（单位：km）
+  haversineDistance(lat1, lng1, lat2, lng2) {
+    if (!lat1 || !lng1 || !lat2 || !lng2) return NaN;
+    const R = 6371;
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLng = (lng2 - lng1) * Math.PI / 180;
+    const a = Math.sin(dLat / 2) ** 2 +
+              Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+              Math.sin(dLng / 2) ** 2;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   }
 
   //根据id获取指定餐馆信息

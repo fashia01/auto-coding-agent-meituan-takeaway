@@ -10,6 +10,13 @@
         <span>首页</span>
       </router-link>
 
+      <router-link to="/ai_chat" tag="li">
+        <div class="ai-chat">
+          <span class="ai-icon" :class="{'ai-icon--active': active === 'ai_chat'}">🤖</span>
+        </div>
+        <span>AI推荐</span>
+      </router-link>
+
       <router-link to="/order" tag="li">
         <div class="order">
           <img src="../assets/order-active.png" v-if="active ==='order'">
@@ -69,6 +76,23 @@
           margin: 0.1rem auto;
           img {
             width: 100%;
+          }
+        }
+        .ai-chat {
+          @include px2rem(width, 60);
+          @include px2rem(height, 60);
+          margin: 0.1rem auto;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+        .ai-icon {
+          font-size: 0.55rem;
+          line-height: 1;
+          filter: grayscale(0.4);
+
+          &--active {
+            filter: none;
           }
         }
         span {

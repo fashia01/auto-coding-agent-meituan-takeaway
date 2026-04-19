@@ -9,6 +9,7 @@ import Footprint from '../controller/v1/footprint';
 import Collection from '../controller/v1/collection';
 import Auth from '../controller/admin/auth';
 import Category from '../models/v1/category';
+import Ai from '../controller/v1/ai';
 
 const router = express.Router();
 router.get('/suggestion', Cites.suggestion);               //地址位置搜索
@@ -65,5 +66,8 @@ router.delete('/footprint', Auth.authUser, Footprint.deleteFootprint);   //删�
 router.post('/collection', Auth.authUser, Collection.addCollection);        //添加收藏
 router.get('/collection', Auth.authUser, Collection.getCollection);        //获取收藏列表
 router.delete('/collection', Auth.authUser, Collection.deleteCollection);   //删除收藏
+
+// AI 对话
+router.post('/ai/chat', Ai.aiChat);   // AI 智能推荐（SSE 流式）
 
 export default router;
