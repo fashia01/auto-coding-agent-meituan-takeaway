@@ -29,7 +29,13 @@ const orderSchema = new Schema({
     confirm: {type: Boolean, default: false},
     create_time_timestamp: {type: String},    //订单创建时间戳
     pay_remain_time: String,         //支付剩余时间
-    has_comment: {type: Boolean, default: false}            //是否已经评价该订单了
+    has_comment: {type: Boolean, default: false},           //是否已经评价该订单了
+    // 新增：状态机扩展字段
+    status_history: [{status: String, time: Date}],       // 状态变更历史
+    estimated_delivery_time: Date,                         // 预计送达时间
+    urge_count: {type: Number, default: 0},               // 催单次数
+    coupon_id: Number,                                     // 使用的优惠券ID
+    discount_amount: {type: Number, default: 0}           // 优惠金额
 })
 
 orderSchema.index({id: 1});
