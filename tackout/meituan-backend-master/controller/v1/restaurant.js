@@ -126,7 +126,8 @@ class Restaurant extends BaseClass {
         restaurants = await RestaurantModel.find({}, '-_id').limit(Number(limit)).skip(Number(offset)).sort({sort_type: 1});
       }
       else {
-        restaurants = await RestaurantModel.find({}).limit(Number(limit)).skip(Number(offset));
+        // 用 .lean() 返回纯 JS 对象，确保 deliverable/distance_km 等额外字段不被 Mongoose 过滤
+        restaurants = await RestaurantModel.find({}).lean().limit(Number(limit)).skip(Number(offset));
         restaurants = await this.getDistance(restaurants, lng, lat);
         res.send({
           status: 200,
@@ -202,10 +203,10 @@ class Restaurant extends BaseClass {
           const displayKm = distKm.toFixed(1);
           restaurants[i].distance = displayKm + 'km';
           restaurants[i].distance_km = distKm;
-          // 直线距离 * 1.4 估算路程（城市系数），超过阈值即不可配送
-          restaurants[i].deliverable = (distKm * 1.4) <= DELIVERY_RADIUS_KM;
+          // 直接用直线距离判断是否可配送（不加路程系数，避免展示距离与判断逻辑不一致）
+          restaurants[i].deliverable = distKm <= DELIVERY_RADIUS_KM;
           restaurants[i].delivery_time_tip = restaurants[i].deliverable
-            ? Math.round(distKm * 1.4 * 3 + 10) + '分钟'  // 粗估：每km约3分钟+10分钟备餐
+            ? Math.round(distKm * 3 + 10) + '分钟'
             : '超出配送范围';
         } else {
           restaurants[i].distance = '未知';

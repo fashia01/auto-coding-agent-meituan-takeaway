@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no" />
+    <title>vue3-meituan</title>
+    <script>
+      // 与 Vue2 版本相同的 rem 适配方案（lib-flexible 等效实现）
+      // baseFontSize = 75，对应 750px 设计稿
+      // 在 375px 设备上：html.fontSize = 375 / 750 * 75 = 37.5px → 1rem = 37.5px
+      ;(function(win) {
+        var doc = win.document
+        var docEl = doc.documentElement
+        var tid
+
+        function refreshRem() {
+          var width = docEl.getBoundingClientRect().width
+          if (width / 2 > 750) { width = 750 * 2 }
+          var rem = width / 10  // 10 等份，750px 设计稿下 1rem = 75px
+          docEl.style.fontSize = rem + 'px'
+        }
+
+        win.addEventListener('resize', function() {
+          clearTimeout(tid)
+          tid = setTimeout(refreshRem, 300)
+        }, false)
+        win.addEventListener('pageshow', function(e) {
+          if (e.persisted) {
+            clearTimeout(tid)
+            tid = setTimeout(refreshRem, 300)
+          }
+        }, false)
+
+        refreshRem()
+      })(window)
+    </script>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
