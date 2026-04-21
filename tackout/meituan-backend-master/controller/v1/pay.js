@@ -3,6 +3,7 @@ import BaseClass from '../../prototype/baseClass'
 import OrderModel from '../../models/v1/order'
 import PayModel from '../../models/v1/pay'
 import UserCoupon from '../../models/v1/user_coupon'
+import config from '../../config'
 import fetch from 'node-fetch';
 import FormData from 'form-data';
 import config from '../../config'
@@ -50,6 +51,8 @@ class Pay extends BaseClass {
                 await OrderModel.updateOne({id: order_id}, {status: '支付成功', code: 200});
                 // 标记优惠券已使用
                 await markCouponUsed(order_id);
+                // 启动订单状态机链式推进
+                scheduleDelivery(order_id);
 
                 // 返回模拟的二维码数据（实际不会被使用）
                 res.send({
@@ -227,5 +230,60 @@ async function markCouponUsed(order_id) {
         console.log('markCouponUsed error', err)
     }
 }
+
+// 订单状态机：链式 setTimeout 推进 paid→accepted→preparing→delivering→delivered
+// 用 Map 存储各订单的 timer，供催单时重置
+const orderTimers = new Map()
+
+function scheduleDelivery(order_id) {
+    const {
+        ORDER_ACCEPT_DELAY   = 2000,
+        ORDER_PREPARE_DELAY  = 30000,
+        ORDER_DELIVER_DELAY  = 60000,
+        ORDER_DONE_DELAY     = 120000
+    } = config
+
+    async function pushStatus(status) {
+        try {
+            const now = new Date()
+            await OrderModel.updateOne(
+                { id: order_id },
+                {
+                    $set: { status },
+                    $push: { status_history: { status, time: now } }
+                }
+            )
+            console.log(`[状态机] 订单 ${order_id} → ${status}`)
+        } catch (err) {
+            console.log(`[状态机] 更新状态失败: ${order_id} → ${status}`, err)
+        }
+    }
+
+    // 清除旧计时器（催单重置时用）
+    if (orderTimers.has(order_id)) {
+        orderTimers.get(order_id).forEach(t => clearTimeout(t))
+    }
+
+    const estimatedDelivery = new Date(
+        Date.now() + ORDER_ACCEPT_DELAY + ORDER_PREPARE_DELAY + ORDER_DELIVER_DELAY + ORDER_DONE_DELAY
+    )
+
+    // 同时写入预计送达时间
+    OrderModel.updateOne({ id: order_id }, { $set: { estimated_delivery_time: estimatedDelivery } })
+        .catch(err => console.log('[状态机] 写入预计送达时间失败', err))
+
+    const t1 = setTimeout(() => pushStatus('accepted'),   ORDER_ACCEPT_DELAY)
+    const t2 = setTimeout(() => pushStatus('preparing'),  ORDER_ACCEPT_DELAY + ORDER_PREPARE_DELAY)
+    const t3 = setTimeout(() => pushStatus('delivering'), ORDER_ACCEPT_DELAY + ORDER_PREPARE_DELAY + ORDER_DELIVER_DELAY)
+    const t4 = setTimeout(() => {
+        pushStatus('delivered')
+        orderTimers.delete(order_id)
+    }, ORDER_ACCEPT_DELAY + ORDER_PREPARE_DELAY + ORDER_DELIVER_DELAY + ORDER_DONE_DELAY)
+
+    orderTimers.set(order_id, [t1, t2, t3, t4])
+}
+
+// 导出 scheduleDelivery 和 orderTimers 供 order controller 调用（催单/取消）
+export { scheduleDelivery, orderTimers }
 
 export default new Pay();

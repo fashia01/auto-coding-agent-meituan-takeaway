@@ -52,6 +52,8 @@ router.get('/orders', Auth.auth, Order.getOrders);             //获取订单列
 router.get('/my_restaurant_order', Auth.authAdmin, Order.getMyRestaurantOrder); // 获取我的餐馆订单
 router.get('/order/:order_id', Auth.auth, Order.getOrder);             //获取指定订单
 router.post('/order_confirm', Auth.authAdmin, Order.confirmOrder);         // 商家确认订单
+router.post('/order/urge', Auth.auth, Order.urgeOrder);                   // 催单
+router.post('/order/cancel', Auth.auth, Order.cancelOrder);               // 取消订单/申请退款
 
 //支付
 router.post('/pay', Auth.auth, Pay.initPay);                    //初始化支付

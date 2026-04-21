@@ -6,6 +6,7 @@ import FoodsModel from '../../models/v1/foods'
 import AdminModel from '../../models/admin/admin'
 import UserCoupon from '../../models/v1/user_coupon'
 import CouponTemplate from '../../models/v1/coupon'
+import { scheduleDelivery, orderTimers } from './pay'
 
 class Order extends BaseClass {
   constructor() {
@@ -15,6 +16,8 @@ class Order extends BaseClass {
     this.getOrders = this.getOrders.bind(this);
     this.makeWXOrder = this.makeWXOrder.bind(this);
     this.getMyRestaurantOrder = this.getMyRestaurantOrder.bind(this);
+    this.urgeOrder = this.urgeOrder.bind(this);
+    this.cancelOrder = this.cancelOrder.bind(this);
   }
 
   //下订单
@@ -311,6 +314,102 @@ class Order extends BaseClass {
         status: -1,
         message: '确定订单失败'
       })
+    }
+  }
+
+  // 3.2 催单：仅允许催一次，重置当前阶段的剩余计时器（加速20%）
+  async urgeOrder(req, res, next) {
+    const { order_id } = req.body
+    const user_id = req.session.admin_id || req.session.user_id
+    if (!order_id) {
+      return res.send({ status: -1, message: '参数有误' })
+    }
+    try {
+      const order = await OrderModel.findOne({ id: order_id })
+      if (!order) {
+        return res.send({ status: -1, message: '订单不存在' })
+      }
+      if (order.urge_count >= 1) {
+        return res.send({ status: -1, message: '每单只能催一次哦' })
+      }
+      const terminalStatuses = ['delivered', 'cancelled', 'DONE']
+      if (terminalStatuses.includes(order.status)) {
+        return res.send({ status: -1, message: '订单已完成或已取消，无法催单' })
+      }
+      // 更新催单次数
+      await OrderModel.updateOne({ id: order_id }, { $inc: { urge_count: 1 } })
+      // 重置状态机（加速：延迟缩短为原来的 50%）
+      const {
+        ORDER_ACCEPT_DELAY   = 2000,
+        ORDER_PREPARE_DELAY  = 30000,
+        ORDER_DELIVER_DELAY  = 60000,
+        ORDER_DONE_DELAY     = 120000
+      } = require('../../config')
+      const speedFactor = 0.5
+      const fakeConfig = {
+        ORDER_ACCEPT_DELAY:  Math.round(ORDER_ACCEPT_DELAY  * speedFactor),
+        ORDER_PREPARE_DELAY: Math.round(ORDER_PREPARE_DELAY * speedFactor),
+        ORDER_DELIVER_DELAY: Math.round(ORDER_DELIVER_DELAY * speedFactor),
+        ORDER_DONE_DELAY:    Math.round(ORDER_DONE_DELAY    * speedFactor),
+      }
+      // 清除旧计时器再以加速版重新调度
+      if (orderTimers.has(order_id)) {
+        orderTimers.get(order_id).forEach(t => clearTimeout(t))
+        orderTimers.delete(order_id)
+      }
+      // 用加速参数重新调度（临时覆盖 config）
+      const origConfig = Object.assign({}, require('../../config'))
+      Object.assign(require('../../config'), fakeConfig)
+      scheduleDelivery(order_id)
+      Object.assign(require('../../config'), origConfig)
+
+      res.send({ status: 200, message: '已催单，骑手加速配送中 🚀' })
+    } catch (err) {
+      console.log('urgeOrder error', err)
+      res.send({ status: -1, message: '催单失败' })
+    }
+  }
+
+  // 3.3 取消订单：非终态时允许取消，同时恢复优惠券
+  async cancelOrder(req, res, next) {
+    const { order_id } = req.body
+    const user_id = req.session.admin_id || req.session.user_id
+    if (!order_id) {
+      return res.send({ status: -1, message: '参数有误' })
+    }
+    try {
+      const order = await OrderModel.findOne({ id: order_id })
+      if (!order) {
+        return res.send({ status: -1, message: '订单不存在' })
+      }
+      const terminalStatuses = ['delivered', 'cancelled', 'DONE']
+      if (terminalStatuses.includes(order.status)) {
+        return res.send({ status: -1, message: '订单已完成或已取消，无法退款' })
+      }
+      const now = new Date()
+      await OrderModel.updateOne(
+        { id: order_id },
+        {
+          $set: { status: 'cancelled' },
+          $push: { status_history: { status: 'cancelled', time: now } }
+        }
+      )
+      // 清除状态机计时器
+      if (orderTimers.has(order_id)) {
+        orderTimers.get(order_id).forEach(t => clearTimeout(t))
+        orderTimers.delete(order_id)
+      }
+      // 若订单使用了优惠券，恢复为 unused
+      if (order.coupon_id) {
+        await UserCoupon.updateOne(
+          { user_id, template_id: order.coupon_id, status: 'used', used_order_id: order_id },
+          { $set: { status: 'unused', used_order_id: null } }
+        )
+      }
+      res.send({ status: 200, message: '订单已取消，退款将在1-3个工作日内到账' })
+    } catch (err) {
+      console.log('cancelOrder error', err)
+      res.send({ status: -1, message: '取消订单失败' })
     }
   }
 }
