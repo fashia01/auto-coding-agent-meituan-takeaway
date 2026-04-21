@@ -51,6 +51,7 @@ import { userInfo, changeAvatar } from '@/api/user'
 import { getInfo } from '@/utils/auth'
 import { uploadToken, upload } from '@/api/upload'
 import config from '@/config'
+import VLoading from '@/components/loading.vue'
 
 const router = useRouter()
 

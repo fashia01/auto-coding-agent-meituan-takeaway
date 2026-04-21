@@ -14,7 +14,7 @@
 </script>
 
 <style rel="stylesheet/scss" lang="scss" scoped>
-@import "../../style/mixin";
+@import "../../style/mixin.scss";
 
 .error {
   position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: #fff;

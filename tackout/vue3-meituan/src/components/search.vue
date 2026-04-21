@@ -30,7 +30,7 @@ watch(search_val, (data) => {
 </script>
 
 <style rel="stylesheet/scss" lang="scss" scoped>
-@import "../style/mixin";
+@import "../style/mixin.scss";
 
 .search-container {
   display: flex; padding-bottom: 0.2rem; background: #fff;

@@ -1,6 +1,5 @@
 import RestaurantModel from '../../models/v1/restaurant'
 import FoodsModel from '../../models/v1/foods';
-import CommentModel from '../../models/v1/comment'
 import BaseClass from "../../prototype/baseClass";
 import CategoryModel from '../../models/v1/category'     //食物左侧分类
 class Restaurant extends BaseClass {
@@ -26,23 +25,21 @@ class Restaurant extends BaseClass {
       return;
     }
     try {
-      let isExit = await Restaurant.findOne({user_id: req.session.admin_id});
+      const isExit = await Restaurant.findOne({user_id: req.session.admin_id});
       if (isExit) {
         res.send({
           status: 1,
-          success: '添加餐馆失败，该用户已经存在餐馆了',
-          restaurant_id
+          success: '添加餐馆失败，该用户已经存在餐馆了'
         });
         return;
       }
     } catch (err) {
       res.send({
         status: 1,
-        success: '添加餐馆失败',
-        restaurant_id
+        success: '添加餐馆失败'
       })
     }
-    let restaurant_id = await this.getId('restaurant_id');
+    const restaurant_id = await this.getId('restaurant_id');
     let shipping_fee_tip = `配送 ￥${shipping_fee}`
     let min_price_tip = `起送 ￥${min_price}`
     let month_sales = Math.ceil(Math.random() * 200)        //月售几笔   为避免都是0 随机生成一个0-200的值
@@ -121,13 +118,13 @@ class Restaurant extends BaseClass {
       return;
     }
     try {
-      let restaurants = '';   //餐馆信息
       if (sort_type === 'min_price' || sort_type === 'wm_poi_score' || sort_type === 'shipping_fee') {    //排序方式
-        restaurants = await RestaurantModel.find({}, '-_id').limit(Number(limit)).skip(Number(offset)).sort({sort_type: 1});
+        const sorted = await RestaurantModel.find({}, '-_id').limit(Number(limit)).skip(Number(offset)).sort({sort_type: 1});
+        res.send({ status: 200, message: '获取餐馆列表成功', data: sorted })
       }
       else {
         // 用 .lean() 返回纯 JS 对象，确保 deliverable/distance_km 等额外字段不被 Mongoose 过滤
-        restaurants = await RestaurantModel.find({}).lean().limit(Number(limit)).skip(Number(offset));
+        let restaurants = await RestaurantModel.find({}).lean().limit(Number(limit)).skip(Number(offset));
         restaurants = await this.getDistance(restaurants, lng, lat);
         res.send({
           status: 200,
@@ -147,8 +144,7 @@ class Restaurant extends BaseClass {
   // 获取全部餐馆
   async allRestaurant(req, res, next) {
     try {
-      let restaurants = '';   //餐馆信息
-      restaurants = await RestaurantModel.find({}, '-_id');
+      const restaurants = await RestaurantModel.find({}, '-_id');
       res.send({
         status: 200,
         message: '获取全部餐馆列表成功',

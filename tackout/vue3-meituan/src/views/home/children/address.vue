@@ -64,7 +64,7 @@ watch(route, () => { loadAddresses() })
 </script>
 
 <style rel="stylesheet/scss" lang="scss" scoped>
-@import "../../../style/mixin";
+@import "../../../style/mixin.scss";
 
 $grey: #999;
 #address {

@@ -281,7 +281,7 @@ export async function aiChat(req, res) {
 
     if (choice.finish_reason === 'tool_calls' && choice.message.tool_calls && choice.message.tool_calls.length > 0) {
       const toolCall = choice.message.tool_calls[0];
-      let toolArgs = {};
+      let toolArgs;
       try {
         toolArgs = JSON.parse(toolCall.function.arguments);
       } catch (e) {

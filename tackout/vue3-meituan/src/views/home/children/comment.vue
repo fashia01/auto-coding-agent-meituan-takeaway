@@ -82,7 +82,7 @@ onMounted(() => {
 </script>
 
 <style rel="stylesheet/scss" lang="scss" scoped>
-@import "../../../style/mixin";
+@import "../../../style/mixin.scss";
 
 #my-comment {
   width: 100%; min-height: 100vh; background: #fff; overflow-y: auto; -webkit-overflow-scrolling: touch;

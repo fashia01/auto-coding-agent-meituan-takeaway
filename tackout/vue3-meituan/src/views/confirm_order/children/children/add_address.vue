@@ -87,7 +87,7 @@ watch(deliveryAddress, (val) => {
 </script>
 
 <style rel="stylesheet/scss" lang="scss" scoped>
-@import "../../../../style/mixin";
+@import "../../../../style/mixin.scss";
 
 #address {
   position: fixed;

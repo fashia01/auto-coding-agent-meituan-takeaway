@@ -175,7 +175,7 @@ onUnmounted(() => { if (timer) clearInterval(timer) })
 </script>
 
 <style rel="stylesheet/scss" lang="scss" scoped>
-@import "../../style/mixin";
+@import "../../style/mixin.scss";
 
 #pay {
   width: 100vw; height: 100vh; background: #f3f3f6;
