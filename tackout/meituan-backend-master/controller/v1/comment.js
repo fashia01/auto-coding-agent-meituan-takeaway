@@ -3,6 +3,7 @@ import AdminModel from '../../models/admin/admin';
 import OrderModel from '../../models/v1/order'
 import CommentModel from '../../models/v1/comment'
 import RestaurantModel from '../../models/v1/restaurant'
+import { writeTasteLog } from './taste'
 import moment from 'moment';
 
 class Comment extends BaseClass {
@@ -72,6 +73,26 @@ class Comment extends BaseClass {
       /* order.has_comment =  !order.has_comment;
        await order.save();*/
       await OrderModel.updateOne({id: order_id}, {has_comment: true});
+
+      // 高评分（>=4星）触发口味画像记录
+      if (food_score >= 4) {
+        const foods = order.foods || []
+        const tagSet = new Set()
+        const prices = []
+        foods.forEach(f => {
+          if (f.tag_list) {
+            f.tag_list.split(',').map(t => t.trim()).filter(Boolean).forEach(t => tagSet.add(t))
+          }
+          if (f.price) prices.push(Number(f.price))
+        })
+        const tags = [...tagSet]
+        const priceRange = prices.length ? {
+          min: Math.min(...prices), max: Math.max(...prices),
+          avg: +(prices.reduce((a, b) => a + b, 0) / prices.length).toFixed(2)
+        } : null
+        writeTasteLog(user_id, tags, priceRange, order.restaurant.id, 'high_rating')
+      }
+
       res.send({
         status: 200,
         message: '评论成功'

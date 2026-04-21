@@ -4,6 +4,7 @@ import OrderModel from '../../models/v1/order'
 import PayModel from '../../models/v1/pay'
 import UserCoupon from '../../models/v1/user_coupon'
 import config from '../../config'
+import { writeTasteLog } from './taste'
 import fetch from 'node-fetch';
 import FormData from 'form-data';
 import config from '../../config'
@@ -275,9 +276,35 @@ function scheduleDelivery(order_id) {
     const t1 = setTimeout(() => pushStatus('accepted'),   ORDER_ACCEPT_DELAY)
     const t2 = setTimeout(() => pushStatus('preparing'),  ORDER_ACCEPT_DELAY + ORDER_PREPARE_DELAY)
     const t3 = setTimeout(() => pushStatus('delivering'), ORDER_ACCEPT_DELAY + ORDER_PREPARE_DELAY + ORDER_DELIVER_DELAY)
-    const t4 = setTimeout(() => {
-        pushStatus('delivered')
+    const t4 = setTimeout(async () => {
+        await pushStatus('delivered')
         orderTimers.delete(order_id)
+        // 订单完成后记录用户口味日志
+        try {
+            const order = await OrderModel.findOne({ id: order_id })
+            if (order) {
+                // 从所有菜品的 tag_list 合并标签（逗号分隔字符串 → 去重数组）
+                const tagSet = new Set()
+                const prices = []
+                ;(order.foods || []).forEach(f => {
+                    if (f.tag_list) {
+                        f.tag_list.split(',').map(t => t.trim()).filter(Boolean).forEach(t => tagSet.add(t))
+                    }
+                    if (f.price) prices.push(Number(f.price))
+                })
+                const tags = [...tagSet]
+                const priceRange = prices.length ? {
+                    min: Math.min(...prices),
+                    max: Math.max(...prices),
+                    avg: +(prices.reduce((a, b) => a + b, 0) / prices.length).toFixed(2)
+                } : null
+                // user_id 存的是 ObjectId，需用数字 id；从 session 无法取得，用 order 的 restaurant_id 作为关联
+                const userId = order.user_id ? order.user_id.toString() : null
+                await writeTasteLog(userId, tags, priceRange, order.restaurant_id, 'order_delivered')
+            }
+        } catch (err) {
+            console.log('[状态机] writeTasteLog on delivered failed:', err.message)
+        }
     }, ORDER_ACCEPT_DELAY + ORDER_PREPARE_DELAY + ORDER_DELIVER_DELAY + ORDER_DONE_DELAY)
 
     orderTimers.set(order_id, [t1, t2, t3, t4])

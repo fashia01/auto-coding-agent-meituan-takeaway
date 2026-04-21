@@ -3,9 +3,12 @@ import dotenv from 'dotenv';
 import path from 'path';
 dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
+import { getUserTasteProfile } from './taste';
+
 import OpenAI from 'openai';
 import FoodModel from '../../models/v1/foods';
 import RestaurantModel from '../../models/v1/restaurant';
+import CouponTemplate from '../../models/v1/coupon';
 
 const openaiClient = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY || '',
@@ -74,6 +77,24 @@ const tools = [
           }
         },
         required: ['weights', 'reason']
+      }
+    }
+  },
+  // 查询当前餐馆有效优惠活动
+  {
+    type: 'function',
+    function: {
+      name: 'get_active_promotions',
+      description: '获取指定餐馆当前有效的优惠券和促销活动摘要，在推荐时告知用户可使用的优惠。',
+      parameters: {
+        type: 'object',
+        properties: {
+          restaurant_id: {
+            type: 'number',
+            description: '餐馆 ID，从 search_and_rank_foods 的结果中获取'
+          }
+        },
+        required: ['restaurant_id']
       }
     }
   }
@@ -145,6 +166,34 @@ function scoreAndRank(candidates, weights, topN) {
 // Tool 执行器
 // -----------------------------------------------------------------------
 async function executeTool(toolName, args) {
+  // 查询餐馆有效优惠活动
+  if (toolName === 'get_active_promotions') {
+    const { restaurant_id } = args;
+    try {
+      const templates = await CouponTemplate.find({
+        $or: [
+          { type: 'platform' },
+          { type: 'restaurant', restaurant_id: Number(restaurant_id) }
+        ]
+      }).lean();
+      if (!templates.length) {
+        return { promotions: [], summary: '该餐馆暂无可用优惠活动' };
+      }
+      const summaries = templates.map(t => {
+        if (t.discount_type === 'fixed') return `满${t.threshold}减${t.value}元`
+        if (t.discount_type === 'percent') return `${Math.round(t.value * 10)}折优惠`
+        if (t.discount_type === 'shipping') return '免配送费'
+        return t.name
+      });
+      return {
+        promotions: templates.map(t => ({ id: t.id, name: t.name, type: t.discount_type, threshold: t.threshold, value: t.value })),
+        summary: `当前可用优惠：${summaries.join('、')}`
+      };
+    } catch (err) {
+      return { promotions: [], summary: '获取优惠信息失败' };
+    }
+  }
+
   if (toolName !== 'search_and_rank_foods') return { ranked: [], criteria: null };
 
   const { keyword, max_price, weights = {}, top_n = 3, reason = '' } = args;
@@ -241,6 +290,20 @@ export async function aiChat(req, res) {
   res.setHeader('Connection', 'keep-alive');
   res.flushHeaders();
 
+  // 获取用户口味画像，注入 systemPrompt
+  const user_id = req.session && (req.session.admin_id || req.session.user_id)
+  let tasteHint = ''
+  if (user_id) {
+    const { topTags, priceRange } = await getUserTasteProfile(String(user_id))
+    if (topTags.length) {
+      tasteHint = `\n\n## 用户口味偏好（来自历史订单分析）\n- 偏好标签：${topTags.join('、')}`
+      if (priceRange && priceRange.avg) {
+        tasteHint += `\n- 常用价格区间：${priceRange.min}~${priceRange.max}元，均价${priceRange.avg}元`
+      }
+      tasteHint += '\n在推荐时请优先考虑以上偏好，但也尊重用户当次的明确需求。'
+    }
+  }
+
   const systemPrompt = {
     role: 'system',
     content: `你是一个专业的外卖智能推荐助手。
@@ -266,7 +329,7 @@ export async function aiChat(req, res) {
 ## 重要约束
 - 推荐数量严格遵守 top_n，不要自行增加
 - 每次都要在末尾输出评判标准说明
-- 如果没有找到菜品，诚实告知并建议换个描述`
+- 如果没有找到菜品，诚实告知并建议换个描述${tasteHint}`
   };
 
   try {
@@ -290,7 +353,31 @@ export async function aiChat(req, res) {
 
       sendEvent(res, { type: 'status', content: '正在为您分析需求并搜索菜品...' });
 
-      const { ranked, criteria } = await executeTool(toolCall.function.name, toolArgs);
+      const toolResult = await executeTool(toolCall.function.name, toolArgs);
+
+      // get_active_promotions 结果单独处理
+      if (toolCall.function.name === 'get_active_promotions') {
+        const toolResultContent = JSON.stringify(toolResult);
+        const toolResultMsg = {
+          role: 'tool',
+          tool_call_id: toolCall.id,
+          content: toolResultContent
+        };
+        const secondResponse = await openaiClient.chat.completions.create({
+          model: 'deepseek-chat',
+          stream: true,
+          messages: [systemPrompt, ...messages, choice.message, toolResultMsg]
+        });
+        for await (const chunk of secondResponse) {
+          const delta = chunk.choices?.[0]?.delta?.content;
+          if (delta) sendEvent(res, { type: 'text', content: delta });
+        }
+        sendEvent(res, { type: 'done' });
+        res.end();
+        return;
+      }
+
+      const { ranked, criteria } = toolResult;
 
       // 推送结构化菜品数据（仅推送已排序的 top_n 条）
       sendEvent(res, { type: 'foods', data: ranked });

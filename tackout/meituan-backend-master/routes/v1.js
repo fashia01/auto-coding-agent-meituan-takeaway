@@ -4,6 +4,7 @@ import Restaurant from '../controller/v1/restaurant';
 import Order from '../controller/v1/order';
 import Comment from '../controller/v1/comment';
 import Coupon from '../controller/v1/coupon';
+import Home from '../controller/v1/home';
 import Foods from '../controller/v1/foods';
 import Pay from '../controller/v1/pay';
 import Footprint from '../controller/v1/footprint';
@@ -77,5 +78,8 @@ router.post('/ai/chat', Ai.aiChat);   // AI 智能推荐（SSE 流式）
 router.get('/coupon/available', Auth.authUser, Coupon.getAvailableCoupons);   // 获取可用优惠券
 router.get('/coupon/mine', Auth.authUser, Coupon.getUserCoupons);              // 我的优惠券
 router.post('/coupon/claim', Auth.authUser, Coupon.claimCoupon);              // 领取优惠券
+
+// 首页推荐
+router.get('/home/recommend', Home.homeRecommend);   // 个性化推荐菜品（口味画像 + 时段）
 
 export default router;
