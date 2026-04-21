@@ -2,6 +2,7 @@ import md5 from 'blueimp-md5'
 import BaseClass from '../../prototype/baseClass'
 import OrderModel from '../../models/v1/order'
 import PayModel from '../../models/v1/pay'
+import UserCoupon from '../../models/v1/user_coupon'
 import fetch from 'node-fetch';
 import FormData from 'form-data';
 import config from '../../config'
@@ -47,6 +48,8 @@ class Pay extends BaseClass {
                 await saveDB({method: 'mock', id, order_id, payType, code: 200, status: '支付成功'});
                 // 同时更新订单状态
                 await OrderModel.updateOne({id: order_id}, {status: '支付成功', code: 200});
+                // 标记优惠券已使用
+                await markCouponUsed(order_id);
 
                 // 返回模拟的二维码数据（实际不会被使用）
                 res.send({
@@ -173,6 +176,8 @@ class Pay extends BaseClass {
                 Order.code = 200;
                 await pay.save();
                 await Order.save();
+                // 标记优惠券已使用
+                await markCouponUsed(pay.order_id);
                 res.send(200);
             }
         } catch (err) {
@@ -206,6 +211,21 @@ class Pay extends BaseClass {
         }
     }
 
+}
+
+// 支付成功后标记优惠券为已使用
+async function markCouponUsed(order_id) {
+    try {
+        const order = await OrderModel.findOne({ id: order_id })
+        if (order && order.coupon_id) {
+            await UserCoupon.updateOne(
+                { id: order.coupon_id, status: 'unused' },
+                { $set: { status: 'used', used_order_id: order_id } }
+            )
+        }
+    } catch (err) {
+        console.log('markCouponUsed error', err)
+    }
 }
 
 export default new Pay();

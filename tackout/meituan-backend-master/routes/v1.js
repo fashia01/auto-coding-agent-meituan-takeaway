@@ -3,6 +3,7 @@ import Cites from '../controller/v1/cites';
 import Restaurant from '../controller/v1/restaurant';
 import Order from '../controller/v1/order';
 import Comment from '../controller/v1/comment';
+import Coupon from '../controller/v1/coupon';
 import Foods from '../controller/v1/foods';
 import Pay from '../controller/v1/pay';
 import Footprint from '../controller/v1/footprint';
@@ -69,5 +70,10 @@ router.delete('/collection', Auth.authUser, Collection.deleteCollection);   //�
 
 // AI 对话
 router.post('/ai/chat', Ai.aiChat);   // AI 智能推荐（SSE 流式）
+
+// 优惠券
+router.get('/coupon/available', Auth.authUser, Coupon.getAvailableCoupons);   // 获取可用优惠券
+router.get('/coupon/mine', Auth.authUser, Coupon.getUserCoupons);              // 我的优惠券
+router.post('/coupon/claim', Auth.authUser, Coupon.claimCoupon);              // 领取优惠券
 
 export default router;

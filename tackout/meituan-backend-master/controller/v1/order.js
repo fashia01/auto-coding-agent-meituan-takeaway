@@ -4,6 +4,8 @@ import RestaurantModel from '../../models/v1/restaurant'
 import AddressModel from '../../models/admin/address'
 import FoodsModel from '../../models/v1/foods'
 import AdminModel from '../../models/admin/admin'
+import UserCoupon from '../../models/v1/user_coupon'
+import CouponTemplate from '../../models/v1/coupon'
 
 class Order extends BaseClass {
   constructor() {
@@ -17,7 +19,7 @@ class Order extends BaseClass {
 
   //下订单
   async makeOrder(req, res, next) {
-    let {restaurant_id, foods, address_id, remark = ''} = req.body;
+    let {restaurant_id, foods, address_id, remark = '', coupon_id} = req.body;
     let user_id = req.session.admin_id || req.session.user_id;
     if (!restaurant_id && !foods && !address_id) {
       res.send({
@@ -34,8 +36,32 @@ class Order extends BaseClass {
       promiseArr.push(AdminModel.findOne({id: user_id}));               //用户信息
       promiseArr.push(this.getId('order_id'));                                    //订单号
       Promise.all(promiseArr).then(async (values) => {
+        let total_price = values[0].total_price
+        let discount_amount = 0
+
+        // 核验并应用优惠券
+        if (coupon_id) {
+          const uc = await UserCoupon.findOne({ id: Number(coupon_id), user_id, status: 'unused' })
+          if (uc) {
+            const now = new Date()
+            if (uc.expire_at > now) {
+              const tpl = await CouponTemplate.findOne({ id: uc.template_id })
+              if (tpl && total_price >= tpl.threshold) {
+                if (tpl.discount_type === 'fixed') {
+                  discount_amount = tpl.value
+                } else if (tpl.discount_type === 'percent') {
+                  discount_amount = +(total_price * (1 - tpl.value)).toFixed(2)
+                } else if (tpl.discount_type === 'shipping') {
+                  discount_amount = restaurant.shipping_fee || 0
+                }
+                discount_amount = Math.min(discount_amount, total_price)
+              }
+            }
+          }
+        }
+
         let order_data = {
-          total_price: values[0].total_price,
+          total_price: +(total_price - discount_amount).toFixed(2),
           foods: values[0].order_foods,
           address: values[1]._id,
           user_id: values[2]._id,
@@ -46,7 +72,9 @@ class Order extends BaseClass {
           code: 0,
           restaurant: restaurant._id,
           shipping_fee: restaurant.shipping_fee,
-          create_time_timestamp: Math.floor(new Date().getTime() / 1000)
+          create_time_timestamp: Math.floor(new Date().getTime() / 1000),
+          coupon_id: coupon_id ? Number(coupon_id) : undefined,
+          discount_amount
         }
         let order = new OrderModel(order_data);
         await order.save();
@@ -54,7 +82,8 @@ class Order extends BaseClass {
           status: 200,
           message: '提交订单成功，请尽快支付',
           order_id: values[3],
-          total_price: values[0].total_price,
+          total_price: order_data.total_price,
+          discount_amount
         })
       });
     } catch (err) {
