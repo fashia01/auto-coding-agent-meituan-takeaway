@@ -14,7 +14,7 @@ export const useCartStore = defineStore('cart', {
   },
 
   actions: {
-    addCart({ restaurant_id, restaurant_name, pic_url, food_id, price, name, foods_pic }) {
+    addCart({ restaurant_id, restaurant_name, pic_url, food_id, price, name, foods_pic, spec = '' }) {
       const cart = { ...this.cartList }
       let restaurant = cart[restaurant_id]
 
@@ -33,7 +33,7 @@ export const useCartStore = defineStore('cart', {
       if (restaurant[food_id]) {
         restaurant[food_id].num++
       } else {
-        restaurant[food_id] = { name, price, foods_pic, num: 1, id: food_id }
+        restaurant[food_id] = { name, price, foods_pic, num: 1, id: food_id, spec }
       }
 
       this.cartList = { ...cart }

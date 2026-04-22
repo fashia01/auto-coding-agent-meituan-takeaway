@@ -27,7 +27,7 @@
               </div>
               <food-selector
                 v-model="foodCount[spus.skus[0].id]"
-                @plus="addFoodToCart(spus)"
+                @plus="openSpecModal(spus)"
                 @minus="reduceFoodFromCart(spus)"
               />
             </section>
@@ -36,6 +36,14 @@
       </article>
     </div>
     <Bottom v-if="getInfoReady"></Bottom>
+
+    <!-- 规格选择弹窗 -->
+    <FoodSpecModal
+      v-model:show="specModalShow"
+      :food="specModalFood"
+      @confirm="onSpecConfirm"
+      @close="specModalShow = false"
+    />
   </div>
 </template>
 
@@ -45,6 +53,7 @@ import { useRoute } from 'vue-router'
 import { useCartStore, useRestaurantStore } from '@/stores'
 import { getFoods } from '@/api/restaurant'
 import Bottom from './bottom.vue'
+import FoodSpecModal from '@/components/FoodSpecModal.vue'
 
 const route = useRoute()
 const cartStore = useCartStore()
@@ -59,18 +68,35 @@ const sectionRefs = reactive([])
 const categoryPositions = ref([])
 const foodCount = reactive({})
 
-function addFoodToCart(spus) {
+// 规格弹窗状态
+const specModalShow = ref(false)
+const specModalFood = ref({})
+
+// 点击 + 号时打开规格弹窗（单规格也走弹窗，保持一致体验）
+function openSpecModal(spus) {
+  specModalFood.value = spus
+  specModalShow.value = true
+}
+
+// 弹窗确认：将选择的规格+数量加入购物车
+function onSpecConfirm({ sku, num }) {
   const restaurant_id = route.query.id
   const poi = restaurantStore.poi_info
-  cartStore.addCart({
-    restaurant_id,
-    restaurant_name: poi.name,
-    pic_url: poi.pic_url,
-    food_id: spus.skus[0].id,
-    price: spus.skus[0].price,
-    name: spus.name,
-    foods_pic: spus.pic_url
-  })
+  // 按数量循环加入（与 FoodSelector 的逐一计数模式保持一致）
+  for (let i = 0; i < num; i++) {
+    cartStore.addCart({
+      restaurant_id,
+      restaurant_name: poi.name,
+      pic_url: poi.pic_url,
+      food_id: sku.id,
+      price: sku.price,
+      name: specModalFood.value.name,
+      foods_pic: specModalFood.value.pic_url,
+      spec: sku.spec || sku.description || ''
+    })
+  }
+  // 更新菜品计数（与 FoodSelector 同步）
+  foodCount[sku.id] = (foodCount[sku.id] || 0) + num
 }
 
 function reduceFoodFromCart(spus) {

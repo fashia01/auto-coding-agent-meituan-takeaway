@@ -60,6 +60,7 @@
             </div>
             <div class="info">
               <span class="name">{{ food.name }}</span>
+              <span v-if="food.spec" class="spec-tag">规格：{{ food.spec }}</span>
               <div>
                 <span class="num">x{{ food.num }}</span>
                 <span class="price">￥{{ food.price }}</span>
@@ -260,6 +261,7 @@ onMounted(() => {
         flex: 1; display: flex; flex-direction: column; justify-content: space-between;
         background: #f7f7f7; padding: 0.1rem 0 0.1rem 0.3rem; @include px2rem(height, 150);
         .name { font-size: 0.4rem; font-weight: 600; }
+        .spec-tag { display: block; font-size: 0.26rem; color: #999; margin: 0.05rem 0; }
         div { display: flex; justify-content: space-between; @include px2rem(padding-top, 50); .num { font-size: 0.4rem; } .price { font-size: 0.4rem; padding-right: 0.2rem; } }
       }
     }
