@@ -16,6 +16,18 @@ export const useCartStore = defineStore('cart', {
   actions: {
     addCart({ restaurant_id, restaurant_name, pic_url, food_id, price, name, foods_pic, spec = '' }) {
       const cart = { ...this.cartList }
+
+      // 跨店保护：检测是否存在其他餐馆的购物车数据
+      const existingIds = Object.keys(cart)
+      if (existingIds.length > 0 && !cart[restaurant_id]) {
+        const existingRestaurantName = cart[existingIds[0]]?.restaurant_name || '其他餐馆'
+        const err = new Error('CROSS_STORE')
+        err.oldRestaurantId = existingIds[0]
+        err.oldRestaurantName = existingRestaurantName
+        err.newRestaurantName = restaurant_name
+        throw err
+      }
+
       let restaurant = cart[restaurant_id]
 
       if (!restaurant) {

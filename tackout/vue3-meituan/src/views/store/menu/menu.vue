@@ -50,6 +50,7 @@
 <script setup>
 import { ref, reactive, onMounted, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
+import { showDialog } from 'vant'
 import { useCartStore, useRestaurantStore } from '@/stores'
 import { getFoods } from '@/api/restaurant'
 import Bottom from './bottom.vue'
@@ -72,31 +73,54 @@ const foodCount = reactive({})
 const specModalShow = ref(false)
 const specModalFood = ref({})
 
-// 点击 + 号时打开规格弹窗（单规格也走弹窗，保持一致体验）
+// 点击 + 号时打开规格弹窗
 function openSpecModal(spus) {
   specModalFood.value = spus
   specModalShow.value = true
 }
 
-// 弹窗确认：将选择的规格+数量加入购物车
-function onSpecConfirm({ sku, num }) {
+// 弹窗确认：将选择的规格+数量加入购物车，处理跨店保护
+async function onSpecConfirm({ sku, num }) {
   const restaurant_id = route.query.id
   const poi = restaurantStore.poi_info
-  // 按数量循环加入（与 FoodSelector 的逐一计数模式保持一致）
-  for (let i = 0; i < num; i++) {
-    cartStore.addCart({
-      restaurant_id,
-      restaurant_name: poi.name,
-      pic_url: poi.pic_url,
-      food_id: sku.id,
-      price: sku.price,
-      name: specModalFood.value.name,
-      foods_pic: specModalFood.value.pic_url,
-      spec: sku.spec || sku.description || ''
-    })
+
+  const addItem = () => {
+    for (let i = 0; i < num; i++) {
+      cartStore.addCart({
+        restaurant_id,
+        restaurant_name: poi.name,
+        pic_url: poi.pic_url,
+        food_id: sku.id,
+        price: sku.price,
+        name: specModalFood.value.name,
+        foods_pic: specModalFood.value.pic_url,
+        spec: sku.spec || sku.description || ''
+      })
+    }
+    foodCount[sku.id] = (foodCount[sku.id] || 0) + num
   }
-  // 更新菜品计数（与 FoodSelector 同步）
-  foodCount[sku.id] = (foodCount[sku.id] || 0) + num
+
+  try {
+    addItem()
+  } catch (err) {
+    if (err.message === 'CROSS_STORE') {
+      // 捕获跨店错误，弹出确认框
+      try {
+        await showDialog({
+          title: '替换购物车',
+          message: `您的购物车中已有"${err.oldRestaurantName}"的菜品，是否清空并加入"${err.newRestaurantName}"的菜品？`,
+          confirmButtonText: '清空并加入',
+          cancelButtonText: '取消',
+          showCancelButton: true,
+        })
+        // 用户确认：清空旧购物车再添加
+        cartStore.emptyCart({ restaurant_id: err.oldRestaurantId })
+        addItem()
+      } catch {
+        // 用户取消，不做任何操作
+      }
+    }
+  }
 }
 
 function reduceFoodFromCart(spus) {

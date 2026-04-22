@@ -76,10 +76,15 @@
 
 <script setup>
 import { ref, computed, watch } from 'vue'
+import { useCartStore } from '@/stores'
 
 const props = defineProps({
   show: { type: Boolean, default: false },
-  food: { type: Object, required: true }
+  food: { type: Object, required: true },
+  // 调用方提供：加入购物车所需的餐馆信息
+  restaurantId: { type: [String, Number], default: null },
+  restaurantName: { type: String, default: '' },
+  restaurantPic: { type: String, default: '' },
 })
 
 const emit = defineEmits(['confirm', 'close', 'update:show'])
@@ -119,6 +124,8 @@ const totalPrice = computed(() => {
   const p = parseFloat(selectedSku.value?.price || 0)
   return (p * num.value).toFixed(2)
 })
+
+const cartStore = useCartStore()
 
 function handleConfirm() {
   emit('confirm', {
