@@ -5,6 +5,7 @@ import Order from '../controller/v1/order';
 import Comment from '../controller/v1/comment';
 import Coupon from '../controller/v1/coupon';
 import Home from '../controller/v1/home';
+import Search from '../controller/v1/search';
 import Foods from '../controller/v1/foods';
 import Pay from '../controller/v1/pay';
 import Footprint from '../controller/v1/footprint';
@@ -81,5 +82,8 @@ router.post('/coupon/claim', Auth.authUser, Coupon.claimCoupon);              //
 
 // 首页推荐
 router.get('/home/recommend', Home.homeRecommend);   // 个性化推荐菜品（口味画像 + 时段）
+
+// 搜索
+router.get('/search/hot', Search.getHotKeywords);    // 热门搜索词
 
 export default router;

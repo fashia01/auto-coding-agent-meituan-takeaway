@@ -328,17 +328,27 @@ class Restaurant extends BaseClass {
       return;
     }
     try {
-      let restaurant = await RestaurantModel.find({name: {$regex: keyword, $options: 'i'}}, '-_id');
+      const regex = { $regex: keyword, $options: 'i' };
+      // 同时搜索餐馆名称 和 菜品名称/标签
+      const [restaurants, foods] = await Promise.all([
+        RestaurantModel.find({ name: regex }, '-_id').lean(),
+        FoodsModel.find({
+          $or: [
+            { name: regex },
+            { tag_list: regex }
+          ]
+        }, '-_id').lean()
+      ]);
       res.send({
         status: 200,
-        data: restaurant,
-        message: '搜索餐馆成功'
+        data: { restaurants, foods },
+        message: '搜索成功'
       })
     } catch (err) {
       console.log('搜索餐馆失败', err);
       res.send({
         status: -1,
-        message: '搜索餐馆失败'
+        message: '搜索失败'
       })
     }
   }
