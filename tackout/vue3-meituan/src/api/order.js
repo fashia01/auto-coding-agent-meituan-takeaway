@@ -63,3 +63,13 @@ export const listenStatus = (data) => {
   return _get(req)
 }
 
+
+// 催单
+export const urgeOrder = (data) => {
+  return _post({ data, url: 'v1/order/urge' })
+}
+
+// 取消订单/申请退款
+export const cancelOrder = (data) => {
+  return _post({ data, url: 'v1/order/cancel' })
+}
