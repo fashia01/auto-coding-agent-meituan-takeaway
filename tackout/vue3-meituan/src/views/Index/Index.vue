@@ -15,6 +15,8 @@
       </div>
       <!-- 导航轮播部分 -->
       <v-nav></v-nav>
+      <!-- AI 个性化推荐（有数据时才展示） -->
+      <HomeAiRecommend />
       <!-- 附近商家 -->
       <div class="head">
         <span class="line"></span>
@@ -37,6 +39,7 @@ import { useAddressStore } from '@/stores'
 import littleCart from '../../components/littleCart.vue'
 import nearbyShops from './nearby_shops.vue'
 import vNav from './nav.vue'
+import HomeAiRecommend from './HomeAiRecommend.vue'
 
 const addressStore = useAddressStore()
 const { address, locationReady } = storeToRefs(addressStore)
