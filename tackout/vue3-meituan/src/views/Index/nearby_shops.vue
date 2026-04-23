@@ -21,12 +21,15 @@
         :class="['shop-item', { 'shop-item--unreachable': !item.deliverable }]"
         @click="goToStore(item)">
 
-        <!-- 商家图片 + 超范围蒙层 -->
+        <!-- 商家图片 + 超范围蒙层 / 打烊蒙层 -->
         <div class="img-show">
           <van-image :src="item.pic_url" fit="cover" lazy-load width="100%" height="100%" />
           <div v-if="!item.deliverable" class="unreachable-mask">
             <span class="unreachable-icon">🚫</span>
             <span class="unreachable-text">超出配送范围</span>
+          </div>
+          <div v-else-if="getBusinessStatus(item.shopping_time_start, item.shopping_time_end) === 'closed'" class="closed-mask">
+            <span class="closed-text">已打烊</span>
           </div>
         </div>
 
@@ -35,6 +38,12 @@
           <h4>
             {{ item.name }}
             <span v-if="!item.deliverable" class="unreachable-tag">暂不配送</span>
+            <van-tag
+              v-else-if="getBusinessStatus(item.shopping_time_start, item.shopping_time_end) === 'opening_soon'"
+              type="warning"
+              size="small"
+              style="margin-left: 4px; vertical-align: middle;"
+            >即将开业</van-tag>
           </h4>
           <div class="shops-message">
             <v-star :score="item.wm_poi_score"></v-star>
@@ -80,11 +89,12 @@
 </template>
 
 <script setup>
-import { ref, watch, onMounted } from 'vue'
+import { ref, watch, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import { useAddressStore } from '@/stores'
 import { getRestaurants } from '@/api/restaurant'
+import { getBusinessStatus } from '@/utils/businessHours'
 
 const router = useRouter()
 const addressStore = useAddressStore()
@@ -102,6 +112,12 @@ const showTip = ref(false)
 function goToStore(item) {
   if (!item.deliverable) {
     tipText.value = `该店铺距您约 ${item.distance}，已超出 30km 配送范围，暂时无法配送`
+    showTip.value = true
+    return
+  }
+  const bizStatus = getBusinessStatus(item.shopping_time_start, item.shopping_time_end)
+  if (bizStatus === 'closed') {
+    tipText.value = `${item.name} 当前已打烊，营业时间 ${item.shopping_time_start || '--'} ~ ${item.shopping_time_end || '--'}`
     showTip.value = true
     return
   }
@@ -245,6 +261,24 @@ watch(address, (value) => {
       gap: 0.06rem;
       .unreachable-icon { font-size: 0.5rem; line-height: 1; }
       .unreachable-text { font-size: 0.24rem; color: #fff; font-weight: bold; white-space: nowrap; }
+    }
+    // 已打烊蒙层
+    .closed-mask {
+      position: absolute;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.45);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      .closed-text {
+        font-size: 0.36rem;
+        font-weight: bold;
+        color: #fff;
+        letter-spacing: 0.04rem;
+        background: rgba(0,0,0,0.3);
+        padding: 0.06rem 0.2rem;
+        border-radius: 0.08rem;
+      }
     }
   }
 

@@ -34,6 +34,7 @@
       </div>
       <span class="submit" v-if="!totalPrice">{{ min_price_tip }}</span>
       <span class="submit" v-else-if="totalPrice < min_price">还差{{ min_price - totalPrice }}</span>
+      <span class="submit closed-tip" v-else-if="isClosed">商家已打烊</span>
       <span @click="prepareOrder()" class="submit go-buy" v-else>去结算</span>
     </div>
     <transition name="fade">
@@ -48,6 +49,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import { useCartStore, useRestaurantStore } from '@/stores'
 import { getInfo } from '@/utils/auth'
+import { getBusinessStatus } from '@/utils/businessHours'
 
 const route = useRoute()
 const router = useRouter()
@@ -55,6 +57,12 @@ const cartStore = useCartStore()
 const restaurantStore = useRestaurantStore()
 const { poi_info } = storeToRefs(restaurantStore)
 const { cartList, ballInCart } = storeToRefs(cartStore)
+
+// 营业状态
+const businessStatus = computed(() =>
+  getBusinessStatus(poi_info.value?.shopping_time_start, poi_info.value?.shopping_time_end)
+)
+const isClosed = computed(() => businessStatus.value === 'closed')
 
 const cartDetail = ref(false)
 const restaurant_id = ref(0)
@@ -220,6 +228,7 @@ onMounted(() => {
       background: #2c2c2c;
       text-align: center;
       &.go-buy { color: #000; background: $mtYellow; }
+      &.closed-tip { color: #fff; background: #bbb; cursor: not-allowed; font-size: 0.28rem; }
     }
   }
   .shade {
