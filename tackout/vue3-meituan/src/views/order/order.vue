@@ -87,7 +87,20 @@
 
           <!-- 操作按钮 -->
           <div class="order-card__actions" @click.stop>
+            <!-- delivered：快速再来一单（自动填充菜品到确认下单页） -->
             <van-button
+              v-if="item.status === 'delivered'"
+              size="small"
+              round
+              type="primary"
+              class="action-btn action-btn--reorder"
+              @click="reorder(item)"
+            >
+              再来一单
+            </van-button>
+            <!-- 其他状态：跳转餐馆菜单 -->
+            <van-button
+              v-else
               size="small"
               round
               plain
@@ -128,6 +141,7 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
+import { showToast } from 'vant'
 import { orders } from '@/api/order'
 import { getInfo } from '@/utils/auth'
 
@@ -153,6 +167,51 @@ function statusTag(status) {
 
 function goDetail(id) {
   router.push('/order_detail?id=' + id)
+}
+
+// 再来一单：从历史订单构建 confirmOrderData 写入 localStorage，跳转到确认下单页
+function reorder(item) {
+  try {
+    if (!item.foods || !item.foods.length) {
+      showToast({ message: '订单数据异常', position: 'bottom' })
+      return
+    }
+
+    // 按 food_id（sku_id）构建 foods 对象，格式与 cart 一致
+    const foods = {
+      totalPrice: 0,
+      totalNum: 0,
+      restaurant_name: item.restaurant?.name || '',
+      pic_url: item.restaurant?.pic_url || ''
+    }
+
+    item.foods.forEach(f => {
+      const foodId = f.sku_id || f.foods_id || f.id
+      if (!foodId) return
+      const price = Number(f.price || 0)
+      const num = Number(f.num || 1)
+      foods[foodId] = {
+        id: foodId,
+        name: f.name,
+        price,
+        foods_pic: f.foods_pic || f.pic_url || '',
+        spec: f.spec || '',
+        num
+      }
+      foods.totalPrice = +((foods.totalPrice || 0) + price * num).toFixed(2)
+      foods.totalNum = (foods.totalNum || 0) + num
+    })
+
+    const confirmOrderData = {
+      restaurant_id: item.restaurant_id,
+      foods
+    }
+
+    localStorage.setItem('confirmOrderData', JSON.stringify(confirmOrderData))
+    router.push({ path: '/confirm_order' })
+  } catch (e) {
+    showToast({ message: '再来一单失败，请重试', position: 'bottom' })
+  }
 }
 
 function fetchOrders() {
@@ -345,6 +404,13 @@ onMounted(() => {
   &.van-button--plain {
     border-color: #ddd;
     color: #555;
+  }
+
+  &--reorder {
+    background: #ffd161 !important;
+    border-color: #ffd161 !important;
+    color: #333 !important;
+    font-weight: 600;
   }
 }
 
