@@ -73,3 +73,13 @@ export const urgeOrder = (data) => {
 export const cancelOrder = (data) => {
   return _post({ data, url: 'v1/order/cancel' })
 }
+
+// 获取可用优惠券
+export const getAvailableCoupons = (data) => {
+  return _get({ data, url: 'v1/coupon/available' })
+}
+
+// 我的优惠券列表
+export const getUserCoupons = () => {
+  return _get({ url: 'v1/coupon/mine' })
+}

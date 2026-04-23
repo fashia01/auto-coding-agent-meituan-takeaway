@@ -62,15 +62,24 @@
         <li><span>配送费</span><span>￥0</span></li>
       </ul>
       <div class="total-price-container">
-        <span>已优惠￥0</span>
-        <span class="total-price">小计<strong>￥{{ totalPrice }}</strong></span>
+        <span>已优惠￥{{ discountAmount }}</span>
+        <span class="total-price">小计<strong>￥{{ finalPrice }}</strong></span>
+      </div>
+    </div>
+
+    <!-- 优惠券选择行 -->
+    <div class="coupon-container">
+      <CouponSelector v-model="selectedCoupon" :coupons="availableCoupons" />
+      <div class="coupon-saving-tip" v-if="selectedCoupon">
+        <van-tag type="danger">已优惠 ￥{{ discountAmount }}</van-tag>
       </div>
     </div>
 
     <div class="bottom">
       <div class="left">
-        <span class="discount-fee">已优惠￥0</span>
-        <span class="total">合计<strong>￥{{ totalPrice }}</strong></span>
+        <span class="discount-fee" v-if="discountAmount > 0">已优惠￥{{ discountAmount }}</span>
+        <span class="discount-fee" v-else>已优惠￥0</span>
+        <span class="total">合计<strong>￥{{ finalPrice }}</strong></span>
       </div>
       <span class="submit" @click="submit()">提交订单</span>
     </div>
@@ -86,7 +95,8 @@ import { storeToRefs } from 'pinia'
 import { useAddressStore } from '@/stores'
 import { getRestaurant } from '@/api/restaurant'
 import { getAllAddress } from '@/api/user'
-import { submitOrder } from '@/api/order'
+import { submitOrder, getAvailableCoupons } from '@/api/order'
+import CouponSelector from '@/components/CouponSelector.vue'
 
 const router = useRouter()
 const addressStore = useAddressStore()
@@ -102,6 +112,20 @@ const emptyAddress = ref(true)
 const alertText = ref('')
 const showTip = ref(false)
 const preventRepeat = ref(false)
+
+// 优惠券
+const availableCoupons = ref([])
+const selectedCoupon = ref(null)
+const discountAmount = computed(() => {
+  if (!selectedCoupon.value) return 0
+  const c = selectedCoupon.value
+  const price = Number(totalPrice.value)
+  if (c.discount_type === 'fixed') return Math.min(c.value, price)
+  if (c.discount_type === 'percent') return +(price * (1 - c.value)).toFixed(2)
+  if (c.discount_type === 'shipping') return Number(poi_info.value?.shipping_fee || 0)
+  return 0
+})
+const finalPrice = computed(() => Math.max(0, Number(totalPrice.value) - discountAmount.value).toFixed(2))
 
 const gender = computed(() => defineAddress.value.gender === 'male' ? '先生' : '女士')
 
@@ -130,7 +154,12 @@ function submit() {
   keys.forEach((key) => {
     if (Number(key)) foods.push({ skus_id: key, num: order_data.value[key]['num'] })
   })
-  submitOrder({ restaurant_id: restaurant_id.value, foods, address_id: defineAddress.value.id }).then((response) => {
+  submitOrder({
+    restaurant_id: restaurant_id.value,
+    foods,
+    address_id: defineAddress.value.id,
+    ...(selectedCoupon.value ? { coupon_id: selectedCoupon.value.user_coupon_id } : {})
+  }).then((response) => {
     if (response.data.status === 200) {
       router.push({ path: '/pay', query: { order_id: response.data.order_id } })
     }
@@ -158,6 +187,13 @@ onMounted(() => {
   getRestaurant({ restaurant_id: restaurant_id.value }).then((response) => {
     poi_info.value = response.data.data
     totalPrice.value = Number(confirmOrderData.foods.totalPrice).toFixed(2)
+    // 拉取可用优惠券（传入当前订单金额用于门槛过滤）
+    getAvailableCoupons({
+      restaurant_id: restaurant_id.value,
+      order_amount: totalPrice.value
+    }).then(res => {
+      if (res.data?.status === 200) availableCoupons.value = res.data.data || []
+    }).catch(() => {})
   })
 })
 </script>
@@ -212,6 +248,14 @@ $grey: #666;
       text-align: right; margin-right: 0.2rem; padding: 0.44rem 0; border-top: 1px dashed #999;
       span:first-child { font-size: 0.45rem; font-weight: 500; color: #999; }
       .total-price { font-size: 0.45rem; font-weight: 500; strong { color: #fb4e44; } }
+    }
+  }
+  // 优惠券区域
+  .coupon-container {
+    background: #fff;
+    margin-bottom: 0.16rem;
+    .coupon-saving-tip {
+      padding: 0 0.3rem 0.2rem;
     }
   }
   .bottom {
