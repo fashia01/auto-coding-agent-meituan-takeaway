@@ -532,6 +532,20 @@ async function main() {
   console.log(`  菜品总数: ${totalFoods}`);
   console.log(`  餐馆总数: ${totalRestaurants}`);
   console.log(`\n  本次新增: 餐馆 ${restOk} 家，分类 ${catOk} 个，菜品 ${foodOk} 道`);
+
+  // 回填分类 spus 关联（确保 populate 能正确展开菜品）
+  console.log('\n🔗 回填分类 spus 关联...');
+  const allCats = await Category.find({});
+  let spusFixed = 0;
+  for (const cat of allCats) {
+    const foods = await Food.find({ category_id: cat.id }, '_id');
+    const ids = foods.map(f => f._id);
+    if (ids.length > 0 && cat.spus.length !== ids.length) {
+      await Category.updateOne({ _id: cat._id }, { $set: { spus: ids } });
+      spusFixed++;
+    }
+  }
+  console.log(`  ✅ 更新了 ${spusFixed} 个分类的 spus 关联`);
   console.log('\n✅ 种子数据写入完成！');
 
   await mongoose.disconnect();

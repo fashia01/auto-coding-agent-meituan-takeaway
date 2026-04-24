@@ -135,7 +135,7 @@ watch(poi_info, (newVal) => {
 
 onMounted(() => {
   restaurant_id.value = route.query.id
-  restaurantStore.getRestaurant(restaurant_id.value)
+  restaurantStore.fetchRestaurant(restaurant_id.value)
   checkCollection()
   timer = setInterval(() => { positionY.value++ }, 4000)
 })

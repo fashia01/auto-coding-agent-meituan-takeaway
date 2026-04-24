@@ -369,7 +369,8 @@ export async function aiChat(req, res) {
           messages: [systemPrompt, ...messages, choice.message, toolResultMsg]
         });
         for await (const chunk of secondResponse) {
-          const delta = chunk.choices?.[0]?.delta?.content;
+          const choice0 = chunk.choices && chunk.choices[0];
+          const delta = choice0 && choice0.delta && choice0.delta.content;
           if (delta) sendEvent(res, { type: 'text', content: delta });
         }
         sendEvent(res, { type: 'done' });

@@ -377,6 +377,21 @@ async function main() {
   // 统计最终数据量
   const totalFoods = await Food.countDocuments();
   const totalRestaurants = await Restaurant.countDocuments();
+
+  // Step 5：回填分类的 spus 关联（确保 populate 能正确展开菜品）
+  console.log('\n🔗 Step 5: 回填分类 spus 关联...');
+  const allCats = await Category.find({ restaurant_id: { $in: NEW_RESTAURANTS.map(r => r.id) } });
+  let spusFixed = 0;
+  for (const cat of allCats) {
+    const foods = await Food.find({ category_id: cat.id }, '_id');
+    const ids = foods.map(f => f._id);
+    if (ids.length > 0) {
+      await Category.updateOne({ _id: cat._id }, { $set: { spus: ids } });
+      spusFixed++;
+    }
+  }
+  console.log(`  ✅ 更新了 ${spusFixed} 个分类的 spus 关联`);
+
   console.log(`\n📊 最终数据统计:`);
   console.log(`  菜品总数: ${totalFoods}`);
   console.log(`  餐馆总数: ${totalRestaurants}`);

@@ -64,10 +64,10 @@ class Comment extends BaseClass {
       let comment = await new CommentModel(data).save();
       /*修改商品评分begin*/
       let restaurant = order.restaurant;
-      let comment_number = restaurant.comment_number;
+      let comment_number = Number(restaurant.comment_number) || 0;  // 防御 undefined/NaN
       restaurant.wm_poi_score = ((restaurant.wm_poi_score * comment_number + food_score ) / (comment_number + 1)).toFixed(1);
       restaurant.delivery_score = ((restaurant.delivery_score * comment_number + delivery_score) / (comment_number + 1)).toFixed(1);
-      restaurant.comment_number++;
+      restaurant.comment_number = comment_number + 1;
       await restaurant.save();
       /*修改商品评分end*/
       /* order.has_comment =  !order.has_comment;

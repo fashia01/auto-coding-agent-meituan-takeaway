@@ -1,13 +1,13 @@
 import md5 from 'blueimp-md5'
 import BaseClass from '../../prototype/baseClass'
 import OrderModel from '../../models/v1/order'
+import RestaurantModel from '../../models/v1/restaurant'
 import PayModel from '../../models/v1/pay'
 import UserCoupon from '../../models/v1/user_coupon'
 import config from '../../config'
 import { writeTasteLog } from './taste'
 import fetch from 'node-fetch';
 import FormData from 'form-data';
-import config from '../../config'
 
 class Pay extends BaseClass {
     constructor() {
@@ -265,13 +265,25 @@ function scheduleDelivery(order_id) {
         orderTimers.get(order_id).forEach(t => clearTimeout(t))
     }
 
-    const estimatedDelivery = new Date(
-        Date.now() + ORDER_ACCEPT_DELAY + ORDER_PREPARE_DELAY + ORDER_DELIVER_DELAY + ORDER_DONE_DELAY
-    )
-
-    // 同时写入预计送达时间
-    OrderModel.updateOne({ id: order_id }, { $set: { estimated_delivery_time: estimatedDelivery } })
-        .catch(err => console.log('[状态机] 写入预计送达时间失败', err))
+    // 预计送达时间：从餐馆 delivery_time_tip 解析配送分钟数（默认30分钟）
+    async function calcEstimatedDelivery() {
+        try {
+            const order = await OrderModel.findOne({ id: order_id })
+            let deliveryMinutes = 30  // 默认30分钟
+            if (order && order.restaurant_id) {
+                const restaurant = await RestaurantModel.findOne({ id: order.restaurant_id })
+                if (restaurant && restaurant.delivery_time_tip) {
+                    const match = restaurant.delivery_time_tip.match(/(\d+)/)
+                    if (match) deliveryMinutes = parseInt(match[1], 10)
+                }
+            }
+            const estimatedDelivery = new Date(Date.now() + deliveryMinutes * 60 * 1000)
+            await OrderModel.updateOne({ id: order_id }, { $set: { estimated_delivery_time: estimatedDelivery } })
+        } catch (err) {
+            console.log('[状态机] 计算预计送达时间失败', err.message)
+        }
+    }
+    calcEstimatedDelivery()
 
     const t1 = setTimeout(() => pushStatus('accepted'),   ORDER_ACCEPT_DELAY)
     const t2 = setTimeout(() => pushStatus('preparing'),  ORDER_ACCEPT_DELAY + ORDER_PREPARE_DELAY)

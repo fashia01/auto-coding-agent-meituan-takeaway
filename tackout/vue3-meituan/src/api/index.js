@@ -5,10 +5,9 @@ const baseURL = import.meta.env.VITE_API_BASE || 'http://localhost:3000'
 
 const instance = axios.create({
   baseURL,
-  timeout: 0,
+  timeout: 15000,
   withCredentials: true,
   headers: { 'X-Requested-With': 'XMLHttpRequest' },
-  maxContentLength: 2000,
   transformResponse: [function (data) {
     try {
       return JSON.parse(data)

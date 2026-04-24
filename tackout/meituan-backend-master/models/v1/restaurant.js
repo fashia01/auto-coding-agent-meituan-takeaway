@@ -36,7 +36,7 @@ const restaurantSchema = new mongoose.Schema({
         average_delivery_time: Number,
         search_log_id: String
     },
-    comment_number: Number,   //评价数量
+    comment_number: {type: Number, default: 0},   //评价数量
     address:String,              //地址
     call_center:String,          //电话
     lng:String,                    //纬度
