@@ -28,23 +28,54 @@ async function writeTasteLog(user_id, food_tags, price_range, restaurant_id, sig
 
 /**
  * getUserTasteProfile — 聚合用户口味画像（内部函数）
- * 返回：{ topTags: string[], priceRange: {min,max,avg} }
+ * 返回：{ topTags: string[], excludeTags: string[], priceRange: {min,max,avg} }
+ * @param {string} user_id
+ * @param {number} limit  正向 TOP 标签数量
+ * @param {object} context 可选上下文 { hour: number, recentTags: string[] }
  */
-async function getUserTasteProfile(user_id, limit = 5) {
+async function getUserTasteProfile(user_id, limit = 5, context = {}) {
   try {
-    // 聚合最近 90 天的口味日志，统计 tag 出现频次
     const since = new Date(Date.now() - 90 * 24 * 3600 * 1000)
-    const pipeline = [
-      { $match: { user_id, created_at: { $gte: since } } },
+
+    // ── 正向标签（order_delivered + high_rating）──
+    const positivePipeline = [
+      { $match: { user_id, signal_type: { $in: ['order_delivered', 'high_rating'] }, created_at: { $gte: since } } },
       { $unwind: '$food_tags' },
       { $group: { _id: '$food_tags', count: { $sum: 1 } } },
       { $sort: { count: -1 } },
-      { $limit: limit }
+      { $limit: limit * 2 }  // 多取一些，后面可能要降权
     ]
-    const tagAgg = await TasteLog.aggregate(pipeline)
-    const topTags = tagAgg.map(t => t._id)
+    const posTagAgg = await TasteLog.aggregate(positivePipeline)
+    let tagScores = posTagAgg.map(t => ({ tag: t._id, score: t.count }))
 
-    // 聚合价格区间
+    // 近期避重：recentTags 中重复 ≥3 次的标签降权 50%
+    if (context.recentTags && context.recentTags.length) {
+      const recentFreq = {}
+      context.recentTags.forEach(t => { recentFreq[t] = (recentFreq[t] || 0) + 1 })
+      tagScores = tagScores.map(item => {
+        if ((recentFreq[item.tag] || 0) >= 3) {
+          return { ...item, score: item.score * 0.5 }
+        }
+        return item
+      })
+    }
+
+    tagScores.sort((a, b) => b.score - a.score)
+    const topTags = tagScores.slice(0, limit).map(t => t.tag)
+
+    // ── 负向标签（low_rating + ai_rejected，出现 ≥2 次视为强负偏好）──
+    const negativePipeline = [
+      { $match: { user_id, signal_type: { $in: ['low_rating', 'order_cancelled', 'ai_rejected'] }, created_at: { $gte: since } } },
+      { $unwind: '$food_tags' },
+      { $group: { _id: '$food_tags', count: { $sum: 1 } } },
+      { $match: { count: { $gte: 2 } } },
+      { $sort: { count: -1 } },
+      { $limit: 10 }
+    ]
+    const negTagAgg = await TasteLog.aggregate(negativePipeline)
+    const excludeTags = negTagAgg.map(t => t._id)
+
+    // ── 价格区间 ──
     const priceAgg = await TasteLog.aggregate([
       { $match: { user_id, created_at: { $gte: since }, 'price_range.avg': { $gt: 0 } } },
       { $group: {
@@ -60,10 +91,10 @@ async function getUserTasteProfile(user_id, limit = 5) {
       avg: Math.round(priceAgg[0].avgPrice || 0)
     } : null
 
-    return { topTags, priceRange }
+    return { topTags, excludeTags, priceRange }
   } catch (err) {
     console.log('[TasteLog] getUserTasteProfile failed:', err.message)
-    return { topTags: [], priceRange: null }
+    return { topTags: [], excludeTags: [], priceRange: null }
   }
 }
 

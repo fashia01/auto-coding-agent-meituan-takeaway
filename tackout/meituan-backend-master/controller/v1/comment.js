@@ -74,23 +74,28 @@ class Comment extends BaseClass {
        await order.save();*/
       await OrderModel.updateOne({id: order_id}, {has_comment: true});
 
-      // 高评分（>=4星）触发口味画像记录
+      // 评分信号：提取菜品标签和价格区间（高分正信号 / 低分负信号）
+      const foods = order.foods || []
+      const tagSet = new Set()
+      const prices = []
+      foods.forEach(f => {
+        if (f.tag_list) {
+          f.tag_list.split(',').map(t => t.trim()).filter(Boolean).forEach(t => tagSet.add(t))
+        }
+        if (f.price) prices.push(Number(f.price))
+      })
+      const tags = [...tagSet]
+      const priceRange = prices.length ? {
+        min: Math.min(...prices), max: Math.max(...prices),
+        avg: +(prices.reduce((a, b) => a + b, 0) / prices.length).toFixed(2)
+      } : null
+
       if (food_score >= 4) {
-        const foods = order.foods || []
-        const tagSet = new Set()
-        const prices = []
-        foods.forEach(f => {
-          if (f.tag_list) {
-            f.tag_list.split(',').map(t => t.trim()).filter(Boolean).forEach(t => tagSet.add(t))
-          }
-          if (f.price) prices.push(Number(f.price))
-        })
-        const tags = [...tagSet]
-        const priceRange = prices.length ? {
-          min: Math.min(...prices), max: Math.max(...prices),
-          avg: +(prices.reduce((a, b) => a + b, 0) / prices.length).toFixed(2)
-        } : null
+        // 高评分：正面信号
         writeTasteLog(user_id, tags, priceRange, order.restaurant.id, 'high_rating')
+      } else if (food_score <= 2 && food_score > 0) {
+        // 低评分（1-2星）：负面信号
+        writeTasteLog(user_id, tags, priceRange, order.restaurant.id, 'low_rating')
       }
 
       res.send({

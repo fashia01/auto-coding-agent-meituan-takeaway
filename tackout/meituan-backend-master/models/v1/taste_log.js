@@ -7,7 +7,7 @@ const tasteLogSchema = new Schema({
   user_id: {type: Number, required: true},           // 用户ID
   signal_type: {                                      // 信号来源类型
     type: String,
-    enum: ['order_delivered', 'high_rating'],         // 订单送达/高评分
+    enum: ['order_delivered', 'high_rating', 'low_rating', 'order_cancelled', 'ai_rejected'],
     required: true
   },
   food_tags: [{type: String}],                        // 本次信号对应的食物标签数组

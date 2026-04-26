@@ -7,6 +7,7 @@ import AdminModel from '../../models/admin/admin'
 import UserCoupon from '../../models/v1/user_coupon'
 import CouponTemplate from '../../models/v1/coupon'
 import { scheduleDelivery, orderTimers } from './pay'
+import { writeTasteLog } from './taste'
 
 class Order extends BaseClass {
   constructor() {
@@ -406,6 +407,15 @@ class Order extends BaseClass {
           { $set: { status: 'unused', used_order_id: null } }
         )
       }
+      // 取消订单写入负面口味信号
+      try {
+        const tagSet = new Set()
+        ;(order.foods || []).forEach(f => {
+          if (f.tag_list) f.tag_list.split(',').map(t => t.trim()).filter(Boolean).forEach(t => tagSet.add(t))
+        })
+        const tags = [...tagSet]
+        if (tags.length) writeTasteLog(String(user_id), tags, null, order.restaurant_id, 'order_cancelled')
+      } catch (e) { /* 口味记录失败不影响主流程 */ }
       res.send({ status: 200, message: '订单已取消，退款将在1-3个工作日内到账' })
     } catch (err) {
       console.log('cancelOrder error', err)
