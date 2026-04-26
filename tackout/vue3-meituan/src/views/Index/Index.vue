@@ -1,3 +1,4 @@
+<!-- 首页：AI 主动推送气泡 -->
 <template>
   <div class="index">
     <div class="main-container">
@@ -15,6 +16,18 @@
       </div>
       <!-- 导航轮播部分 -->
       <v-nav></v-nav>
+
+      <!-- AI 主动推送气泡 -->
+      <transition name="push-slide">
+        <div v-if="showPushBubble" class="push-bubble">
+          <div class="push-bubble__body" @click="handleBubbleClick">
+            <span class="push-bubble__icon">🤖</span>
+            <span class="push-bubble__msg">{{ pushMessage }}</span>
+          </div>
+          <button class="push-bubble__close" @click.stop="dismissBubble">✕</button>
+        </div>
+      </transition>
+
       <!-- AI 个性化推荐（有数据时才展示） -->
       <HomeAiRecommend />
       <!-- 附近商家 -->
@@ -33,21 +46,70 @@
 </template>
 
 <script setup>
-import { onMounted } from 'vue'
+import { ref, onMounted } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useAddressStore } from '@/stores'
+import { useRouter } from 'vue-router'
+import { getInfo } from '@/utils/auth'
 import littleCart from '../../components/littleCart.vue'
 import nearbyShops from './nearby_shops.vue'
 import vNav from './nav.vue'
 import HomeAiRecommend from './HomeAiRecommend.vue'
 
+const API_BASE = 'http://localhost:3000'
+
 const addressStore = useAddressStore()
 const { address, locationReady } = storeToRefs(addressStore)
+const router = useRouter()
+
+const showPushBubble = ref(false)
+const pushMessage = ref('')
+const pushContext = ref('')
+
+function todayStr() {
+  return new Date().toISOString().slice(0, 10)
+}
+
+function dismissBubble() {
+  showPushBubble.value = false
+  localStorage.setItem('push_dismissed_date', todayStr())
+}
+
+function handleBubbleClick() {
+  if (!pushMessage.value) return
+  const msg = encodeURIComponent(pushMessage.value)
+  const ctx = encodeURIComponent(pushContext.value)
+  router.push(`/ai_chat?push_msg=${msg}&push_context=${ctx}`)
+}
+
+async function checkPushPending() {
+  try {
+    // 若今天已关闭气泡，不再检查
+    const dismissed = localStorage.getItem('push_dismissed_date')
+    if (dismissed === todayStr()) return
+
+    const resp = await fetch(`${API_BASE}/v1/push/pending`, { credentials: 'include' })
+    if (!resp.ok) return
+    const data = await resp.json()
+    if (data.has_push && data.message) {
+      pushMessage.value = data.message
+      pushContext.value = data.push_context || ''
+      showPushBubble.value = true
+    }
+  } catch (e) {
+    // 静默失败，不影响首页加载
+  }
+}
 
 onMounted(() => {
   const { lat, lng } = address.value
   if (!lat || !lng) {
     addressStore.fetchLocation()
+  }
+  // 仅登录用户检查推送
+  const username = getInfo()
+  if (username) {
+    checkPushPending()
   }
 })
 </script>
@@ -130,4 +192,53 @@ onMounted(() => {
     }
   }
 }
+
+/* AI 推送气泡 */
+.push-bubble {
+  display: flex;
+  align-items: center;
+  margin: 0.2rem 0.3rem 0;
+  padding: 0.22rem 0.28rem;
+  background: linear-gradient(135deg, #fff8e1, #fffde7);
+  border: 1px solid #ffd161;
+  border-radius: 0.2rem;
+  box-shadow: 0 0.04rem 0.16rem rgba(255, 209, 97, 0.3);
+  gap: 0.16rem;
+
+  &__body {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 0.14rem;
+    cursor: pointer;
+  }
+
+  &__icon {
+    font-size: 0.44rem;
+    flex-shrink: 0;
+  }
+
+  &__msg {
+    font-size: 0.28rem;
+    color: #333;
+    line-height: 1.4;
+  }
+
+  &__close {
+    flex-shrink: 0;
+    background: none;
+    border: none;
+    color: #999;
+    font-size: 0.28rem;
+    padding: 0.08rem;
+    cursor: pointer;
+    line-height: 1;
+  }
+}
+
+/* 气泡滑入动画 */
+.push-slide-enter-active { transition: all 0.3s ease; }
+.push-slide-leave-active { transition: all 0.2s ease; }
+.push-slide-enter-from { transform: translateY(-0.3rem); opacity: 0; }
+.push-slide-leave-to { transform: translateY(-0.2rem); opacity: 0; }
 </style>

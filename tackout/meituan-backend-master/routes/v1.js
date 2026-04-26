@@ -13,6 +13,7 @@ import Collection from '../controller/v1/collection';
 import Auth from '../controller/admin/auth';
 import Category from '../models/v1/category';
 import Ai from '../controller/v1/ai';
+import Push from '../controller/v1/push';
 
 const router = express.Router();
 router.get('/suggestion', Cites.suggestion);               //地址位置搜索
@@ -87,5 +88,8 @@ router.get('/home/recommend', Home.homeRecommend);   // 个性化推荐菜品（
 
 // 搜索
 router.get('/search/hot', Search.getHotKeywords);    // 热门搜索词
+
+// AI 主动推送
+router.get('/push/pending', Push.getPendingPush);    // 检查待推送建议
 
 export default router;

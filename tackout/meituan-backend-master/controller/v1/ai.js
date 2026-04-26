@@ -595,7 +595,7 @@ function sendEvent(res, data) {
 // 主控制器：POST /v1/ai/chat
 // -----------------------------------------------------------------------
 export async function aiChat(req, res) {
-  const { messages, rejected_food_ids } = req.body;
+  const { messages, rejected_food_ids, push_context } = req.body;
 
   if (!messages || !Array.isArray(messages) || messages.length === 0) {
     return res.status(400).json({ status: -1, message: 'messages 参数不能为空' });
@@ -683,7 +683,7 @@ export async function aiChat(req, res) {
   - 单人、找某类菜品 → search_and_rank_foods
   - 多人就餐、需要组合方案、提到预算上限 → plan_meal_combo
 - 收到 plan_meal_combo 结果后，自然介绍套餐亮点，说明荤素搭配和口味，鼓励用户点击"全部加入购物车"。
-- 若用户说"去掉那道汤"、"换一道菜"，理解为对上次套餐的修改，重新调用 plan_meal_combo 并在 constraints 中加入修改说明。${tasteHint}`
+- 若用户说"去掉那道汤"、"换一道菜"，理解为对上次套餐的修改，重新调用 plan_meal_combo 并在 constraints 中加入修改说明。${tasteHint}${push_context ? `\n\n## 本次对话背景（主动推送触发）\n${push_context}` : ''}`
   };
 
   try {

@@ -28,7 +28,7 @@ async function writeTasteLog(user_id, food_tags, price_range, restaurant_id, sig
 
 /**
  * getUserTasteProfile — 聚合用户口味画像（内部函数）
- * 返回：{ topTags: string[], excludeTags: string[], priceRange: {min,max,avg} }
+ * 返回：{ topTags: string[], excludeTags: string[], priceRange: {min,max,avg}, behaviorPatterns: {peak_hours, repeat_tag} }
  * @param {string} user_id
  * @param {number} limit  正向 TOP 标签数量
  * @param {object} context 可选上下文 { hour: number, recentTags: string[] }
@@ -91,10 +91,45 @@ async function getUserTasteProfile(user_id, limit = 5, context = {}) {
       avg: Math.round(priceAgg[0].avgPrice || 0)
     } : null
 
-    return { topTags, excludeTags, priceRange }
+    // ── 行为模式分析（供推送引擎使用）──
+    let behaviorPatterns = null
+    try {
+      const since7d = new Date(Date.now() - 7 * 24 * 3600 * 1000)
+      const recentDelivered = await TasteLog.find({
+        user_id,
+        signal_type: 'order_delivered',
+        created_at: { $gte: since7d }
+      }).sort({ created_at: -1 }).lean()
+
+      // peak_hours：统计各小时下单次数，返回出现 ≥4 次的小时列表
+      const hourCount = {}
+      recentDelivered.forEach(log => {
+        const h = new Date(log.created_at).getHours()
+        hourCount[h] = (hourCount[h] || 0) + 1
+      })
+      const peak_hours = Object.keys(hourCount)
+        .filter(h => hourCount[h] >= 4)
+        .map(h => Number(h))
+
+      // repeat_tag：最近3条 order_delivered 的首要标签完全相同则返回该标签
+      const latest3 = recentDelivered.slice(0, 3)
+      let repeat_tag = null
+      if (latest3.length === 3) {
+        const firstTags = latest3.map(l => (l.food_tags && l.food_tags[0]) || null)
+        if (firstTags[0] && firstTags[0] === firstTags[1] && firstTags[1] === firstTags[2]) {
+          repeat_tag = firstTags[0]
+        }
+      }
+
+      behaviorPatterns = { peak_hours, repeat_tag }
+    } catch (err) {
+      console.log('[TasteLog] behaviorPatterns analysis failed:', err.message)
+    }
+
+    return { topTags, excludeTags, priceRange, behaviorPatterns }
   } catch (err) {
     console.log('[TasteLog] getUserTasteProfile failed:', err.message)
-    return { topTags: [], excludeTags: [], priceRange: null }
+    return { topTags: [], excludeTags: [], priceRange: null, behaviorPatterns: null }
   }
 }
 

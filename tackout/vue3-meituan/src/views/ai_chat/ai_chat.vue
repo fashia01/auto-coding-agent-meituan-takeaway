@@ -78,8 +78,8 @@
 
 <script setup>
 /* eslint-disable no-console */
-import { ref, nextTick } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, nextTick, onMounted } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
 import { useCartStore } from '@/stores'
 import ChatBubble from './components/ChatBubble.vue'
 import FoodCard from './components/FoodCard.vue'
@@ -90,16 +90,29 @@ import ComboCard from './components/ComboCard.vue'
 const API_BASE = 'http://localhost:3000'
 
 const router = useRouter()
+const route = useRoute()
 const cartStore = useCartStore()
 
 const messages = ref([])
 const isLoading = ref(false)
 const msgList = ref(null)
+const pushContext = ref('')  // 推送上下文，由首页气泡传入
 
 function scrollToBottom() {
   const el = msgList.value
   if (el) el.scrollTop = el.scrollHeight
 }
+
+// 检测推送上下文：若从首页气泡跳转过来，自动触发首条消息
+onMounted(() => {
+  const pushMsg = route.query.push_msg
+  const pushCtx = route.query.push_context
+  if (pushCtx) pushContext.value = decodeURIComponent(String(pushCtx))
+  if (pushMsg) {
+    const decoded = decodeURIComponent(String(pushMsg))
+    setTimeout(() => sendMessage(decoded), 300)
+  }
+})
 
 async function sendMessage(text) {
   if (!text || isLoading.value) return
@@ -229,7 +242,8 @@ async function sendMessage(text) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         messages: payload,
-        ...(rejectedFoodIds.length ? { rejected_food_ids: rejectedFoodIds } : {})
+        ...(rejectedFoodIds.length ? { rejected_food_ids: rejectedFoodIds } : {}),
+        ...(pushContext.value ? { push_context: pushContext.value } : {})
       })
     })
 
