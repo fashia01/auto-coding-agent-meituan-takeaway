@@ -8,6 +8,7 @@ import UserCoupon from '../../models/v1/user_coupon'
 import CouponTemplate from '../../models/v1/coupon'
 import { scheduleDelivery, orderTimers } from './pay'
 import { writeTasteLog } from './taste'
+import { subscribe, unsubscribe, broadcast } from '../../utils/orderSubscriptions'
 
 class Order extends BaseClass {
   constructor() {
@@ -19,6 +20,8 @@ class Order extends BaseClass {
     this.getMyRestaurantOrder = this.getMyRestaurantOrder.bind(this);
     this.urgeOrder = this.urgeOrder.bind(this);
     this.cancelOrder = this.cancelOrder.bind(this);
+    this.subscribeOrder = this.subscribeOrder.bind(this);
+    this.getOrderProgress = this.getOrderProgress.bind(this);
   }
 
   //下订单
@@ -400,6 +403,9 @@ class Order extends BaseClass {
         orderTimers.get(order_id).forEach(t => clearTimeout(t))
         orderTimers.delete(order_id)
       }
+      // 广播取消状态给 SSE 订阅者
+      broadcast(order_id, { type: 'status_update', status: 'cancelled', status_text: '订单已取消', eta_ms: null })
+      broadcast(order_id, { type: 'done' })
       // 若订单使用了优惠券，恢复为 unused
       if (order.coupon_id) {
         await UserCoupon.updateOne(
@@ -420,6 +426,106 @@ class Order extends BaseClass {
     } catch (err) {
       console.log('cancelOrder error', err)
       res.send({ status: -1, message: '取消订单失败' })
+    }
+  }
+
+  // SSE 实时订阅订单状态
+  async subscribeOrder(req, res, next) {
+    const order_id = Number(req.params.order_id)
+    const user_id = req.session && (req.session.admin_id || req.session.user_id)
+    if (!order_id) {
+      return res.status(400).json({ status: -1, message: '参数有误' })
+    }
+
+    // 设置 SSE 响应头
+    res.setHeader('Content-Type', 'text/event-stream')
+    res.setHeader('Cache-Control', 'no-cache')
+    res.setHeader('Connection', 'keep-alive')
+    res.setHeader('X-Accel-Buffering', 'no')
+    res.flushHeaders()
+
+    const sendEvent = (data) => {
+      try { res.write(`data: ${JSON.stringify(data)}\n\n`) } catch (e) { /* 连接已断开 */ }
+    }
+
+    // 注册连接
+    subscribe(order_id, res)
+
+    // 立即发送当前状态
+    try {
+      const order = await OrderModel.findOne({ id: order_id }).lean()
+      if (order) {
+        const statusTextMap = {
+          '未支付': '等待支付', '支付成功': '等待接单', 'accepted': '已接单，备餐中',
+          'preparing': '骑手取餐中', 'delivering': '骑手配送中', 'delivered': '已送达',
+          'cancelled': '订单已取消'
+        }
+        sendEvent({
+          type: 'status_update',
+          status: order.status,
+          status_text: statusTextMap[order.status] || order.status,
+          eta_ms: order.estimated_delivery_time ? order.estimated_delivery_time.getTime() : null
+        })
+        // 终态不需要维持连接
+        const terminalStatuses = ['delivered', 'cancelled', 'DONE']
+        if (terminalStatuses.includes(order.status)) {
+          sendEvent({ type: 'done' })
+          res.end()
+          return
+        }
+      }
+    } catch (err) {
+      console.log('[SSE] 获取初始状态失败:', err.message)
+    }
+
+    // 每 30 秒发送心跳
+    const heartbeat = setInterval(() => {
+      try { res.write('data: {"type":"heartbeat"}\n\n') } catch (e) { clearInterval(heartbeat) }
+    }, 30000)
+
+    // 5 分钟超时自动断开
+    const timeout = setTimeout(() => {
+      clearInterval(heartbeat)
+      unsubscribe(order_id, res)
+      try { sendEvent({ type: 'done' }); res.end() } catch (e) { /* ignore */ }
+    }, 5 * 60 * 1000)
+
+    // 客户端断开时清理
+    req.on('close', () => {
+      clearInterval(heartbeat)
+      clearTimeout(timeout)
+      unsubscribe(order_id, res)
+    })
+  }
+
+  // 获取订单当前进度（供断线重连后快速同步）
+  async getOrderProgress(req, res, next) {
+    const order_id = Number(req.params.order_id)
+    if (!order_id) {
+      return res.send({ status: -1, message: '参数有误' })
+    }
+    try {
+      const order = await OrderModel.findOne({ id: order_id }).lean()
+      if (!order) {
+        return res.send({ status: -1, message: '订单不存在' })
+      }
+      const statusTextMap = {
+        '未支付': '等待支付', '支付成功': '等待接单', 'accepted': '已接单，备餐中',
+        'preparing': '骑手取餐中', 'delivering': '骑手配送中', 'delivered': '已送达',
+        'cancelled': '订单已取消'
+      }
+      res.send({
+        status: 200,
+        data: {
+          status: order.status,
+          status_text: statusTextMap[order.status] || order.status,
+          estimated_delivery_time: order.estimated_delivery_time || null,
+          status_history: order.status_history || []
+        }
+      })
+    } catch (err) {
+      console.log('getOrderProgress error', err)
+      res.send({ status: -1, message: '获取进度失败' })
     }
   }
 }

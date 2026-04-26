@@ -56,6 +56,8 @@ router.get('/order/:order_id', Auth.auth, Order.getOrder);             //获取�
 router.post('/order_confirm', Auth.authAdmin, Order.confirmOrder);         // 商家确认订单
 router.post('/order/urge', Auth.auth, Order.urgeOrder);                   // 催单
 router.post('/order/cancel', Auth.auth, Order.cancelOrder);               // 取消订单/申请退款
+router.get('/order/subscribe/:order_id', Auth.auth, Order.subscribeOrder); // SSE 实时订阅订单状态
+router.get('/order/progress/:order_id', Auth.auth, Order.getOrderProgress); // 获取订单当前进度
 
 //支付
 router.post('/pay', Auth.auth, Pay.initPay);                    //初始化支付

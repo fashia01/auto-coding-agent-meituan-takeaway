@@ -8,6 +8,7 @@ import config from '../../config'
 import { writeTasteLog } from './taste'
 import fetch from 'node-fetch';
 import FormData from 'form-data';
+import { broadcast } from '../../utils/orderSubscriptions'
 
 class Pay extends BaseClass {
     constructor() {
@@ -245,6 +246,12 @@ function scheduleDelivery(order_id) {
     } = config
 
     async function pushStatus(status) {
+        const statusTextMap = {
+            'accepted': '已接单，备餐中',
+            'preparing': '骑手取餐中',
+            'delivering': '骑手配送中',
+            'delivered': '已送达'
+        }
         try {
             const now = new Date()
             await OrderModel.updateOne(
@@ -255,6 +262,19 @@ function scheduleDelivery(order_id) {
                 }
             )
             console.log(`[状态机] 订单 ${order_id} → ${status}`)
+            // 状态变更后广播给所有订阅者
+            const order = await OrderModel.findOne({ id: order_id }).lean()
+            const eta_ms = order && order.estimated_delivery_time ? order.estimated_delivery_time.getTime() : null
+            broadcast(order_id, {
+                type: 'status_update',
+                status,
+                status_text: statusTextMap[status] || status,
+                eta_ms
+            })
+            // 终态时发送 done 事件
+            if (status === 'delivered' || status === 'cancelled') {
+                broadcast(order_id, { type: 'done' })
+            }
         } catch (err) {
             console.log(`[状态机] 更新状态失败: ${order_id} → ${status}`, err)
         }

@@ -22,6 +22,11 @@
       <OrderTimeline :current-status="orderData.status" :status-history="orderData.status_history || []" />
     </section>
 
+    <!-- 实时配送进度条（非终态时显示） -->
+    <section v-if="!isTerminal && orderData.code === 200" class="progress-section">
+      <DeliveryProgress :status="orderData.status" :eta="etaMs" />
+    </section>
+
     <!-- 菜品信息 -->
     <section class="foods-info-container">
       <div class="title">
@@ -94,6 +99,9 @@ import { useRoute } from 'vue-router'
 import { showConfirmDialog, showToast } from 'vant'
 import { orderInfo, urgeOrder, cancelOrder } from '@/api/order'
 import OrderTimeline from '@/components/OrderTimeline.vue'
+import DeliveryProgress from './components/DeliveryProgress.vue'
+
+const API_BASE = 'http://localhost:3000'
 
 const route = useRoute()
 const orderStatus = ref('')
@@ -104,6 +112,7 @@ const orderData = ref({ total_price: 0, status_history: [], urge_count: 0 })
 const address = ref({})
 const alertText = ref('')
 const showTip = ref(false)
+const etaMs = ref(null)  // 预计送达时间戳（ms）
 
 const TERMINAL = new Set(['delivered', 'cancelled'])
 const isTerminal = computed(() => TERMINAL.has(orderData.value.status))
@@ -160,6 +169,52 @@ function stopPolling() {
   if (pollTimer) { clearInterval(pollTimer); pollTimer = null }
 }
 
+// ── SSE 实时订阅 ──────────────────────────────────────────────
+let sseSource = null
+
+function startSSE(order_id) {
+  if (sseSource) sseSource.close()
+  sseSource = new EventSource(`${API_BASE}/v1/order/subscribe/${order_id}`, { withCredentials: true })
+
+  sseSource.onmessage = (e) => {
+    try {
+      const event = JSON.parse(e.data)
+      if (event.type === 'status_update') {
+        const info = STATUS_LABELS[event.status] || { title: event.status, desc: '' }
+        orderStatus.value = info.title
+        statusDesc.value = info.desc
+        orderData.value = { ...orderData.value, status: event.status }
+        if (event.eta_ms) etaMs.value = event.eta_ms
+      } else if (event.type === 'done') {
+        sseSource.close()
+        sseSource = null
+      }
+    } catch (err) { /* 解析失败静默 */ }
+  }
+
+  sseSource.onerror = async () => {
+    // 断线重连：先同步最新状态
+    try {
+      const res = await fetch(`${API_BASE}/v1/order/progress/${order_id}`, { credentials: 'include' })
+      const json = await res.json()
+      if (json.status === 200 && json.data) {
+        const d = json.data
+        const info = STATUS_LABELS[d.status] || { title: d.status, desc: '' }
+        orderStatus.value = info.title
+        statusDesc.value = info.desc
+        orderData.value = { ...orderData.value, status: d.status, status_history: d.status_history || [] }
+        if (d.estimated_delivery_time) etaMs.value = new Date(d.estimated_delivery_time).getTime()
+        if (TERMINAL.has(d.status)) { sseSource && sseSource.close(); sseSource = null }
+      }
+    } catch (e) { /* 静默 */ }
+    // EventSource 会自动重连，无需手动处理
+  }
+}
+
+function stopSSE() {
+  if (sseSource) { sseSource.close(); sseSource = null }
+}
+
 async function handleUrge() {
   try {
     const res = await urgeOrder({ order_id: orderData.value.id })
@@ -196,11 +251,19 @@ onMounted(() => {
     const res = response.data
     if (res.status === -1) { alertText.value = '获取订单失败'; showTip.value = true; return }
     applyOrderData(res.data)
-    if (!TERMINAL.has(res.data.status)) startPolling()
+    if (res.data.estimated_delivery_time) etaMs.value = new Date(res.data.estimated_delivery_time).getTime()
+    // 非终态时建立 SSE 连接（优先），回退到轮询
+    if (!TERMINAL.has(res.data.status) && res.data.code === 200) {
+      if (typeof EventSource !== 'undefined') {
+        startSSE(id)
+      } else {
+        startPolling()
+      }
+    }
   })
 })
 
-onUnmounted(() => stopPolling())
+onUnmounted(() => { stopPolling(); stopSSE() })
 </script>
 
 <style rel="stylesheet/scss" lang="scss" scoped>
@@ -228,6 +291,7 @@ $shallow_grey: #838383;
   }
 
   .timeline-section { background: #fff; margin: 0.2rem 0; padding: 0.1rem 0; }
+  .progress-section { background: #fff; margin: 0.2rem 0; padding: 0.1rem 0 0.2rem; }
 
   .foods-info-container {
     .title { margin: 0.2rem 0; display: flex; align-items: center; background: #fff; @include px2rem(height, 105); .restaurant-picture { @include px2rem(width, 40); @include px2rem(height, 40); img { width: 100%; height: 100%; } } .restaurant-name { font-size: 0.4rem; color: $shallow_grey; } }
