@@ -48,6 +48,7 @@ router.get('/comment_count', Comment.commentCount);      //获取评论数量
 router.get('/my_restaurant_comment', Auth.authAdmin, Comment.myRestaurantComment);     //获取我的餐馆评论
 router.delete('/comment', Auth.authUser, Comment.deleteComment);              //删除评论
 router.post('/reply_comment', Auth.authAdmin, Comment.replyComment);   // 商家回复评论
+router.get('/comment/summary', Comment.getCommentSummaryRoute);   // 评论摘要聚合（AI tool 用）
 //订单
 router.post('/order', Auth.auth, Order.makeOrder);         //下订单
 router.post('/wxorder', Auth.auth, Order.makeWXOrder);     // 下微信订单

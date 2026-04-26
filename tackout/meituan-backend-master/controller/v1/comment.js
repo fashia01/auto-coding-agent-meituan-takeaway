@@ -5,11 +5,26 @@ import CommentModel from '../../models/v1/comment'
 import RestaurantModel from '../../models/v1/restaurant'
 import { writeTasteLog } from './taste'
 import moment from 'moment';
+import OpenAI from 'openai';
+import dotenv from 'dotenv';
+import path from 'path';
+dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+
+// ── 评论摘要内存缓存 ─────────────────────────────────────────
+// Map<key, { data, expireAt }>
+const summaryCache = new Map()
+const CACHE_TTL = 60 * 60 * 1000  // 1小时
+
+const openaiClient = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY || '',
+  baseURL: process.env.OPENAI_BASE_URL || 'https://api.deepseek.com/v1',
+})
 
 class Comment extends BaseClass {
   constructor() {
     super();
     this.makeComment = this.makeComment.bind(this);
+    this.getCommentSummaryRoute = this.getCommentSummaryRoute.bind(this);
   }
 
   //评论
@@ -281,6 +296,117 @@ class Comment extends BaseClass {
       })
     }
   }
+// ── 评论摘要路由接口 ─────────────────────────────────────────
+  async getCommentSummaryRoute(req, res) {
+    const { restaurant_id, keyword, limit } = req.query
+    if (!restaurant_id) return res.send({ status: -1, message: '缺少 restaurant_id 参数' })
+    try {
+      const data = await getCommentSummary(restaurant_id, keyword, limit)
+      res.send({ status: 200, data })
+    } catch (err) {
+      res.send({ status: -1, message: '获取评论摘要失败' })
+    }
+  }
 }
 
-export default new Comment();
+// ── getCommentSummary — 内部函数，供路由接口和 AI tool 共用 ──
+async function getCommentSummary(restaurant_id, keyword, limit) {
+  /* eslint-disable no-console */
+  limit = Number(limit) || 20
+  const cacheKey = `${restaurant_id}:${keyword || ''}`
+
+  // 命中缓存直接返回
+  const cached = summaryCache.get(cacheKey)
+  if (cached && cached.expireAt > Date.now()) {
+    return cached.data
+  }
+
+  try {
+    // 查询最近 limit 条评论
+    let query = { restaurant_id: Number(restaurant_id) }
+    if (keyword) {
+      query.comment_data = { $regex: keyword, $options: 'i' }
+    }
+    const comments = await CommentModel.find(query)
+      .sort({ comment_time: -1 })
+      .limit(limit)
+      .lean()
+
+    const total_count = comments.length
+
+    // 无评论
+    if (!total_count) {
+      const result = { restaurant_name: '', avg_scores: null, distribution: { 5:0, 4:0, 3:0, 2:0, 1:0 }, samples: [], summary_text: '暂无评论', total_count: 0 }
+      summaryCache.set(cacheKey, { data: result, expireAt: Date.now() + CACHE_TTL })
+      return result
+    }
+
+    // 评分分布
+    const distribution = { 5:0, 4:0, 3:0, 2:0, 1:0 }
+    let sumFood = 0, sumDelivery = 0, sumQuality = 0
+    comments.forEach(c => {
+      const star = Math.round(c.food_score || 0)
+      if (distribution[star] !== undefined) distribution[star]++
+      sumFood += c.food_score || 0
+      sumDelivery += c.delivery_score || 0
+      sumQuality += c.quality_score || 0
+    })
+    const n = total_count
+    const avg_scores = {
+      food: +(sumFood / n).toFixed(1),
+      delivery: +(sumDelivery / n).toFixed(1),
+      quality: +(sumQuality / n).toFixed(1)
+    }
+
+    // 代表性评论：高分最新、低分最新、含keyword最新
+    const sorted_by_score_desc = [...comments].sort((a, b) => (b.food_score||0) - (a.food_score||0))
+    const sorted_by_score_asc  = [...comments].sort((a, b) => (a.food_score||0) - (b.food_score||0))
+    const samplesSet = new Map()
+    if (sorted_by_score_desc[0]) samplesSet.set(sorted_by_score_desc[0]._id && sorted_by_score_desc[0]._id.toString(), sorted_by_score_desc[0])
+    if (sorted_by_score_asc[0])  samplesSet.set(sorted_by_score_asc[0]._id && sorted_by_score_asc[0]._id.toString(), sorted_by_score_asc[0])
+    if (keyword) {
+      const withKw = comments.find(c => c.comment_data && c.comment_data.includes(keyword))
+      if (withKw) samplesSet.set(withKw._id && withKw._id.toString(), withKw)
+    }
+    const samples = [...samplesSet.values()].slice(0, 3).map(c => ({
+      text: (c.comment_data || '').slice(0, 50),
+      food_score: c.food_score || 0
+    }))
+
+    // 查询餐馆名
+    let restaurant_name = ''
+    try {
+      const rest = await RestaurantModel.findOne({ id: Number(restaurant_id) }).lean()
+      restaurant_name = rest ? rest.name : ''
+    } catch (e) { /* ignore */ }
+
+    // ≥3条评论时调用 LLM 生成一句话摘要
+    let summary_text = ''
+    if (total_count >= 3) {
+      try {
+        const sampleTexts = samples.map((s, i) => `${i+1}. ${s.text}`).join('\n')
+        const summaryResp = await openaiClient.chat.completions.create({
+          model: process.env.OPENAI_MODEL || 'deepseek-chat',
+          messages: [{ role: 'user', content: `请用不超过30个字概括以下外卖餐馆评论的整体印象：\n${sampleTexts}\n综合评分：口味${avg_scores.food}/配送${avg_scores.delivery}/品质${avg_scores.quality}` }],
+          stream: false,
+          max_tokens: 60
+        })
+        const content = summaryResp.choices && summaryResp.choices[0] && summaryResp.choices[0].message && summaryResp.choices[0].message.content
+        summary_text = content ? content.trim().slice(0, 30) : ''
+      } catch (e) {
+        console.log('[CommentSummary] LLM摘要失败:', e.message)
+      }
+    }
+
+    const result = { restaurant_name, avg_scores, distribution, samples, summary_text, total_count }
+    summaryCache.set(cacheKey, { data: result, expireAt: Date.now() + CACHE_TTL })
+    return result
+  } catch (err) {
+    console.log('[CommentSummary] error:', err.message)
+    return { restaurant_name: '', avg_scores: null, distribution: {}, samples: [], summary_text: '', total_count: 0 }
+  }
+}
+
+const commentInstance = new Comment()
+export default commentInstance
+export { getCommentSummary }

@@ -5,6 +5,7 @@ dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
 import { getUserTasteProfile } from './taste';
 import { writeTasteLog } from './taste';
+import { getCommentSummary } from './comment';
 
 import OpenAI from 'openai';
 import FoodModel from '../../models/v1/foods';
@@ -146,6 +147,37 @@ const tools = [
       name: 'view_cart',
       description: '当用户说"看看我购物车"、"购物车里有什么"时使用。触发前端展示当前购物车内容。',
       parameters: { type: 'object', properties: {}, required: [] }
+    }
+  },
+  // 查询餐馆用户评价摘要
+  {
+    type: 'function',
+    function: {
+      name: 'get_restaurant_reviews',
+      description: `获取指定餐馆的真实用户评价摘要。
+在以下场景使用：
+- 用户询问"这家店怎么样"、"评价好不好"、"口碑如何"
+- 用户询问某类菜品体验，如"辣菜好吃吗"、"送得快不快"
+- 推荐菜品后用户追问餐馆整体评价
+不要在用户仅询问菜品推荐时调用此工具。`,
+      parameters: {
+        type: 'object',
+        properties: {
+          restaurant_id: {
+            type: 'number',
+            description: '餐馆 ID，从 search_and_rank_foods 结果中获取'
+          },
+          keyword: {
+            type: 'string',
+            description: '可选关键词过滤，如"辣度"、"分量"、"速度"。用户询问特定方面时填写'
+          },
+          limit: {
+            type: 'number',
+            description: '查询最近多少条评论，默认20'
+          }
+        },
+        required: ['restaurant_id']
+      }
     }
   },
   // 多人套餐规划
@@ -330,6 +362,19 @@ async function executeTool(toolName, args) {
       };
     } catch (err) {
       return { action: 'add', success: false, message: '加购失败，请重试' };
+    }
+  }
+
+  // ── get_restaurant_reviews：查询餐馆评论摘要 ─────────────────
+  if (toolName === 'get_restaurant_reviews') {
+    const { restaurant_id, keyword, limit } = args
+    if (!restaurant_id) return { error: '缺少 restaurant_id 参数' }
+    try {
+      const summary = await getCommentSummary(restaurant_id, keyword, limit)
+      return summary
+    } catch (err) {
+      console.error('[AI] get_restaurant_reviews error:', err.message)
+      return { error: '获取评论失败' }
     }
   }
 
@@ -677,6 +722,12 @@ export async function aiChat(req, res) {
 - **view_cart**：用户说"看看购物车"、"购物车里有什么"时调用。
 - 若用户说"换一家店的菜"但购物车有其他店菜品，先提示用户确认清空，用户说"确认"后再调用 add_to_cart（force=true）。
 
+## 评价查询工具使用规则（get_restaurant_reviews）
+- 当用户询问"这家店怎么样"、"评价好不好"、"口碑如何"、"某菜品好不好吃"、"送餐速度怎样"时调用
+- 推荐菜品后用户追问餐馆整体评价时也可调用
+- 需要 restaurant_id，从 search_and_rank_foods 结果中获取
+- 用户询问特定方面时填写 keyword（如"辣度"/"分量"/"速度"）
+
 ## 套餐规划工具使用规则（plan_meal_combo）
 - 当用户提到**多人就餐**（如"我们4个人"、"一桌菜"）、**设定预算**（如"预算150"）、或说"帮我们点餐"时，优先使用 plan_meal_combo。
 - **plan_meal_combo vs search_and_rank_foods 区分**：
@@ -752,6 +803,41 @@ export async function aiChat(req, res) {
           const choice0 = chunk.choices && chunk.choices[0];
           const delta = choice0 && choice0.delta && choice0.delta.content;
           if (delta) sendEvent(res, { type: 'text', content: delta });
+        }
+        sendEvent(res, { type: 'done' });
+        res.end();
+        return;
+      }
+
+      // get_restaurant_reviews：评论摘要结果
+      if (toolCall.function.name === 'get_restaurant_reviews') {
+        if (toolResult.error) {
+          sendEvent(res, { type: 'text', content: `获取评价失败：${toolResult.error}` });
+        } else {
+          // 发送 review 事件给前端渲染 ReviewSummaryCard
+          sendEvent(res, { type: 'review', data: toolResult });
+          // LLM 基于评价数据生成自然语言口碑介绍
+          const reviewResultMsg = {
+            role: 'tool',
+            tool_call_id: toolCall.id,
+            content: JSON.stringify({
+              restaurant_name: toolResult.restaurant_name,
+              avg_scores: toolResult.avg_scores,
+              total_count: toolResult.total_count,
+              summary_text: toolResult.summary_text,
+              sample_comments: toolResult.samples
+            })
+          };
+          const reviewTextStream = await openaiClient.chat.completions.create({
+            model: process.env.OPENAI_MODEL || 'deepseek-chat',
+            stream: true,
+            messages: [systemPrompt, ...messages, choice.message, reviewResultMsg]
+          });
+          for await (const chunk of reviewTextStream) {
+            const c0 = chunk.choices && chunk.choices[0];
+            const delta = c0 && c0.delta && c0.delta.content;
+            if (delta) sendEvent(res, { type: 'text', content: delta });
+          }
         }
         sendEvent(res, { type: 'done' });
         res.end();
