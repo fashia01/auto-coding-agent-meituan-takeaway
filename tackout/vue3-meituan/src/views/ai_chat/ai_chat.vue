@@ -37,6 +37,14 @@
           ></food-card>
         </div>
 
+        <!-- 套餐规划卡片 -->
+        <ComboCard
+          v-if="msg.combo"
+          :combo="msg.combo"
+          @added="() => {}"
+          @checkout="router.push('/confirm_order')"
+        />
+
         <!-- 购物车操作结果卡片 -->
         <CartActionCard
           v-if="msg.cartAction"
@@ -77,6 +85,7 @@ import ChatBubble from './components/ChatBubble.vue'
 import FoodCard from './components/FoodCard.vue'
 import ChatInput from './components/ChatInput.vue'
 import CartActionCard from './components/CartActionCard.vue'
+import ComboCard from './components/ComboCard.vue'
 
 const API_BASE = 'http://localhost:3000'
 
@@ -189,7 +198,7 @@ async function sendMessage(text) {
 
   // 2. 推入占位助手消息
   const assistantIndex = messages.value.length
-  messages.value.push({ role: 'assistant', content: '', foods: [], criteria: null })
+  messages.value.push({ role: 'assistant', content: '', foods: [], criteria: null, combo: null })
 
   isLoading.value = true
   nextTick(() => scrollToBottom())
@@ -250,6 +259,9 @@ async function sendMessage(text) {
           messages.value[assistantIndex].foods = event.data || []
         } else if (event.type === 'criteria') {
           messages.value[assistantIndex].criteria = event.data
+        } else if (event.type === 'combo') {
+          // 套餐规划结果
+          messages.value[assistantIndex].combo = event.data || null
         } else if (event.type === 'food_ids_ctx') {
           // 隐藏的菜品 ID 上下文，追加到 assistant content 但不显示给用户
           // AI 下一轮对话可以从 message history 中看到这些 food_id

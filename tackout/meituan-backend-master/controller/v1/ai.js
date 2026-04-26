@@ -147,6 +147,41 @@ const tools = [
       description: '当用户说"看看我购物车"、"购物车里有什么"时使用。触发前端展示当前购物车内容。',
       parameters: { type: 'object', properties: {}, required: [] }
     }
+  },
+  // 多人套餐规划
+  {
+    type: 'function',
+    function: {
+      name: 'plan_meal_combo',
+      description: `当用户提到多人就餐、设定预算、说"点一桌菜"、"帮我们几个人点餐"等场景时使用此工具进行套餐规划。
+与 search_and_rank_foods 的区别：
+- search_and_rank_foods：单品推荐，适合"推荐一道菜"、"找个汉堡"
+- plan_meal_combo：组合套餐，适合"4个人吃，预算150"、"点一桌菜，有人不吃辣"
+调用前请确认已知晓用餐人数和预算上限。`,
+      parameters: {
+        type: 'object',
+        properties: {
+          restaurant_id: {
+            type: 'number',
+            description: '指定餐馆 ID（从对话上下文或 search_and_rank_foods 结果中获取）。如用户未指定餐馆则不传此参数（null）。'
+          },
+          headcount: {
+            type: 'number',
+            description: '用餐人数，如用户说"4个人"则传4。未指定时默认2。'
+          },
+          budget: {
+            type: 'number',
+            description: '总预算上限（元），如用户说"预算150"则传150。未指定时默认100。'
+          },
+          constraints: {
+            type: 'array',
+            items: { type: 'string' },
+            description: '口味/饮食约束列表，如["至少一道不辣","有荤有素","不要海鲜"]。未指定约束时传空数组。'
+          }
+        },
+        required: ['headcount', 'budget', 'constraints']
+      }
+    }
   }
 ];
 
@@ -295,6 +330,183 @@ async function executeTool(toolName, args) {
       };
     } catch (err) {
       return { action: 'add', success: false, message: '加购失败，请重试' };
+    }
+  }
+
+  // ── plan_meal_combo：多人套餐规划 ────────────────────────────────────────
+  if (toolName === 'plan_meal_combo') {
+    const { restaurant_id, headcount = 2, budget = 100, constraints = [] } = args;
+
+    try {
+      // 1. 查询菜品候选列表（指定餐馆或全库 TOP 40）
+      let foodQuery = {};
+      if (restaurant_id) {
+        foodQuery = { restaurant_id: Number(restaurant_id) };
+      }
+      const candidateFoods = await FoodModel.find(foodQuery)
+        .sort({ month_saled: -1 })
+        .limit(40)
+        .lean();
+
+      if (!candidateFoods.length) {
+        return { error: '暂无可用菜品，请指定其他餐馆' };
+      }
+
+      // 查询餐馆信息
+      const restIds = [...new Set(candidateFoods.map(f => f.restaurant_id))];
+      const restaurants = await RestaurantModel.find({ id: { $in: restIds } }).lean();
+      const restMap = {};
+      restaurants.forEach(r => { restMap[r.id] = r; });
+
+      // 构建菜品摘要列表（供 LLM 选择）
+      const foodSummaries = candidateFoods.map(f => ({
+        food_id: f.id,
+        name: f.name,
+        price: f.skus && f.skus[0] ? parseFloat(f.skus[0].price) : parseFloat(f.min_price) || 0,
+        tag_list: f.tag_list || '',
+        restaurant_id: f.restaurant_id
+      })).filter(f => f.price > 0);
+
+      // 2. 构造套餐规划 prompt 并调用 DeepSeek（非流式）
+      const comboPrompt = `你是一个专业的外卖套餐规划助手。请根据以下信息为用户规划一份外卖套餐。
+
+## 用餐信息
+- 用餐人数：${headcount} 人
+- 预算上限：${budget} 元
+- 饮食约束：${constraints.length ? constraints.join('；') : '无特殊要求'}
+
+## 可选菜品列表（JSON）
+${JSON.stringify(foodSummaries, null, 2)}
+
+## 要求
+1. 从以上菜品中选出合适的套餐组合，确保总价 ≤ ${budget} 元
+2. 菜品数量应与用餐人数匹配（通常 ${headcount} 人配 ${Math.max(3, headcount + 1)} 道菜）
+3. 严格满足饮食约束（如"不辣"则不选 tag_list 含"辣"的菜品）
+4. 荤素搭配合理，有主食、有菜
+
+## 输出格式（只输出 JSON，不要有其他文字）
+{"items":[{"food_id":数字,"qty":数量}],"reasoning":"规划说明，100字以内"}`;
+
+      let llmResult = null;
+      let retryCount = 0;
+
+      while (retryCount <= 1) {
+        const comboResponse = await openaiClient.chat.completions.create({
+          model: process.env.OPENAI_MODEL || 'deepseek-chat',
+          messages: [{ role: 'user', content: comboPrompt }],
+          stream: false
+        });
+
+        const rawContent = comboResponse.choices[0] && comboResponse.choices[0].message && comboResponse.choices[0].message.content;
+        if (!rawContent) { retryCount++; continue; }
+
+        // 解析 JSON（去掉可能的 markdown code fence）
+        let parsed = null;
+        try {
+          const clean = rawContent.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
+          parsed = JSON.parse(clean);
+        } catch (e) {
+          retryCount++;
+          continue;
+        }
+
+        if (!parsed || !Array.isArray(parsed.items) || !parsed.items.length) {
+          retryCount++;
+          continue;
+        }
+
+        // 3. 程序硬性校验：从 DB 验证真实价格
+        const planFoodIds = parsed.items.map(item => Number(item.food_id));
+        const planFoods = await FoodModel.find({ id: { $in: planFoodIds } }).lean();
+        const planFoodMap = {};
+        planFoods.forEach(f => { planFoodMap[f.id] = f; });
+
+        // 组装 items（含真实价格）
+        let comboItems = parsed.items.map(item => {
+          const f = planFoodMap[Number(item.food_id)];
+          if (!f) return null;
+          const price = f.skus && f.skus[0] ? parseFloat(f.skus[0].price) : parseFloat(f.min_price) || 0;
+          return {
+            food_id: f.id,
+            name: f.name,
+            qty: item.qty || 1,
+            price,
+            tag_list: f.tag_list || '',
+            pic_url: f.pic_url || '',
+            restaurant_id: f.restaurant_id
+          };
+        }).filter(Boolean);
+
+        // 校验预算
+        let totalPrice = comboItems.reduce((sum, item) => sum + item.price * item.qty, 0);
+
+        // 超预算：替换最贵菜品（最多3次）
+        let replaceCount = 0;
+        while (totalPrice > budget && replaceCount < 3) {
+          // 找最贵的那道菜
+          comboItems.sort((a, b) => b.price * b.qty - a.price * a.qty);
+          const expensive = comboItems[0];
+          // 在候选中找同 restaurant_id 中更便宜的替代品
+          const cheaper = foodSummaries
+            .filter(fs => fs.restaurant_id === expensive.restaurant_id && fs.price < expensive.price && fs.food_id !== expensive.food_id)
+            .sort((a, b) => b.price - a.price)[0];
+          if (!cheaper) break;
+          comboItems[0] = {
+            food_id: cheaper.food_id,
+            name: cheaper.name,
+            qty: expensive.qty,
+            price: cheaper.price,
+            tag_list: cheaper.tag_list,
+            pic_url: '',
+            restaurant_id: cheaper.restaurant_id
+          };
+          totalPrice = comboItems.reduce((sum, item) => sum + item.price * item.qty, 0);
+          replaceCount++;
+        }
+
+        // 校验口味约束（检查"不辣"类约束）
+        const noSpicy = constraints.some(c => c.includes('不辣') || c.includes('不要辣'));
+        const constraintsMet = {};
+        if (noSpicy) {
+          const hasNonSpicy = comboItems.some(item => !item.tag_list.includes('辣'));
+          constraintsMet.no_spicy = hasNonSpicy;
+          // 若无非辣菜品，重试一次
+          if (!hasNonSpicy && retryCount < 1) {
+            retryCount++;
+            continue;
+          }
+        }
+        constraintsMet.budget = totalPrice <= budget;
+
+        // 4. 补充 pic_url（从 DB 已查到的完整 food 信息）
+        comboItems = comboItems.map(item => {
+          const f = planFoodMap[item.food_id];
+          return { ...item, pic_url: (f && f.pic_url) || '' };
+        });
+
+        // 5. 确定餐馆信息
+        const mainRestId = comboItems[0] && comboItems[0].restaurant_id;
+        const mainRest = restMap[mainRestId] || {};
+
+        llmResult = {
+          restaurant_id: mainRestId || null,
+          restaurant_name: mainRest.name || '精选餐馆',
+          items: comboItems,
+          total_price: Math.round(totalPrice * 100) / 100,
+          reasoning: parsed.reasoning || `为 ${headcount} 人规划的套餐，共 ${comboItems.length} 道菜`,
+          constraints_met: constraintsMet
+        };
+        break;
+      }
+
+      if (!llmResult) {
+        return { error: '套餐规划失败，请稍后重试或调整预算/约束' };
+      }
+
+      return llmResult;
+    } catch (err) {
+      console.error('[AI] plan_meal_combo error:', err.message);
+      return { error: '套餐规划出错，请重试' };
     }
   }
 
@@ -463,7 +675,15 @@ export async function aiChat(req, res) {
 - **add_to_cart**：仅当用户明确说"加入购物车"、"就要这个"、"下单这个"、"帮我点这个"时才调用。推荐阶段绝对不要调用。调用时使用 search_and_rank_foods 结果中的 food_id 字段。
 - **clear_cart**：用户说"清空购物车"、"重新来"、"都不要了"时调用。
 - **view_cart**：用户说"看看购物车"、"购物车里有什么"时调用。
-- 若用户说"换一家店的菜"但购物车有其他店菜品，先提示用户确认清空，用户说"确认"后再调用 add_to_cart（force=true）。${tasteHint}`
+- 若用户说"换一家店的菜"但购物车有其他店菜品，先提示用户确认清空，用户说"确认"后再调用 add_to_cart（force=true）。
+
+## 套餐规划工具使用规则（plan_meal_combo）
+- 当用户提到**多人就餐**（如"我们4个人"、"一桌菜"）、**设定预算**（如"预算150"）、或说"帮我们点餐"时，优先使用 plan_meal_combo。
+- **plan_meal_combo vs search_and_rank_foods 区分**：
+  - 单人、找某类菜品 → search_and_rank_foods
+  - 多人就餐、需要组合方案、提到预算上限 → plan_meal_combo
+- 收到 plan_meal_combo 结果后，自然介绍套餐亮点，说明荤素搭配和口味，鼓励用户点击"全部加入购物车"。
+- 若用户说"去掉那道汤"、"换一道菜"，理解为对上次套餐的修改，重新调用 plan_meal_combo 并在 constraints 中加入修改说明。${tasteHint}`
   };
 
   try {
@@ -485,7 +705,7 @@ export async function aiChat(req, res) {
         toolArgs = {};
       }
 
-      sendEvent(res, { type: 'status', content: '正在为您分析需求并搜索菜品...' });
+      sendEvent(res, { type: 'status', content: toolCall.function.name === 'plan_meal_combo' ? '正在为您规划套餐方案...' : '正在为您分析需求并搜索菜品...' });
 
       const toolResult = await executeTool(toolCall.function.name, toolArgs);
 
@@ -532,6 +752,43 @@ export async function aiChat(req, res) {
           const choice0 = chunk.choices && chunk.choices[0];
           const delta = choice0 && choice0.delta && choice0.delta.content;
           if (delta) sendEvent(res, { type: 'text', content: delta });
+        }
+        sendEvent(res, { type: 'done' });
+        res.end();
+        return;
+      }
+
+      // plan_meal_combo：套餐规划结果
+      if (toolCall.function.name === 'plan_meal_combo') {
+        if (toolResult.error) {
+          // 规划失败，直接用文字回复
+          sendEvent(res, { type: 'text', content: toolResult.error });
+        } else {
+          // 发送 combo 事件给前端渲染 ComboCard
+          sendEvent(res, { type: 'combo', data: toolResult });
+          // 再让 LLM 用自然语言介绍套餐
+          const comboResultMsg = {
+            role: 'tool',
+            tool_call_id: toolCall.id,
+            content: JSON.stringify({
+              success: true,
+              restaurant_name: toolResult.restaurant_name,
+              items: toolResult.items.map(i => ({ name: i.name, qty: i.qty, price: i.price })),
+              total_price: toolResult.total_price,
+              reasoning: toolResult.reasoning,
+              constraints_met: toolResult.constraints_met
+            })
+          };
+          const comboTextStream = await openaiClient.chat.completions.create({
+            model: process.env.OPENAI_MODEL || 'deepseek-chat',
+            stream: true,
+            messages: [systemPrompt, ...messages, choice.message, comboResultMsg]
+          });
+          for await (const chunk of comboTextStream) {
+            const c0 = chunk.choices && chunk.choices[0];
+            const delta = c0 && c0.delta && c0.delta.content;
+            if (delta) sendEvent(res, { type: 'text', content: delta });
+          }
         }
         sendEvent(res, { type: 'done' });
         res.end();
