@@ -17,11 +17,6 @@
       </div>
     </section>
 
-    <!-- 订单状态时间线 -->
-    <section class="timeline-section">
-      <OrderTimeline :current-status="orderData.status" :status-history="orderData.status_history || []" />
-    </section>
-
     <!-- 实时配送进度条（非终态时显示） -->
     <section v-if="!isTerminal && orderData.code === 200" class="progress-section">
       <DeliveryProgress :status="orderData.status" :eta="etaMs" />
@@ -98,7 +93,6 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { showConfirmDialog, showToast } from 'vant'
 import { orderInfo, urgeOrder, cancelOrder } from '@/api/order'
-import OrderTimeline from '@/components/OrderTimeline.vue'
 import DeliveryProgress from './components/DeliveryProgress.vue'
 
 const API_BASE = 'http://localhost:3000'
@@ -290,7 +284,6 @@ $shallow_grey: #838383;
     .estimated-time { margin-top: 0.2rem; font-size: 0.28rem; color: #ff6034; }
   }
 
-  .timeline-section { background: #fff; margin: 0.2rem 0; padding: 0.1rem 0; }
   .progress-section { background: #fff; margin: 0.2rem 0; padding: 0.1rem 0 0.2rem; }
 
   .foods-info-container {
