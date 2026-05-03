@@ -454,8 +454,7 @@ async function executeTool(toolName, args) {
     const { restaurant_id, keyword, limit } = args
     if (!restaurant_id) return { error: '缺少 restaurant_id 参数' }
     try {
-      const summary = await getCommentSummary(restaurant_id, keyword, limit)
-      return summary
+      return await getCommentSummary(restaurant_id, keyword, limit)
     } catch (err) {
       console.error('[AI] get_restaurant_reviews error:', err.message)
       return { error: '获取评论失败' }

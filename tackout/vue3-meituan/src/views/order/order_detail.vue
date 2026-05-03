@@ -248,17 +248,17 @@ async function handleShare() {
     await navigator.clipboard.writeText(text)
     showToast({ message: '✅ 已复制分享内容', position: 'bottom' })
   } catch (e) {
-    // 降级方案：弹出提示框
     showToast({ message: text.slice(0, 30) + '...', position: 'bottom', duration: 3000 })
   }
 }
+
+onMounted(() => {
   const id = route.query.id
   orderInfo({ order_id: id }).then((response) => {
     const res = response.data
     if (res.status === -1) { alertText.value = '获取订单失败'; showTip.value = true; return }
     applyOrderData(res.data)
     if (res.data.estimated_delivery_time) etaMs.value = new Date(res.data.estimated_delivery_time).getTime()
-    // 非终态时建立 SSE 连接（优先），回退到轮询
     if (!TERMINAL.has(res.data.status) && res.data.code === 200) {
       if (typeof EventSource !== 'undefined') {
         startSSE(id)

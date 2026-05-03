@@ -2,7 +2,6 @@ import BaseClass from '../../prototype/baseClass'
 import CouponTemplate from '../../models/v1/coupon'
 import UserCoupon from '../../models/v1/user_coupon'
 import { writeMessage } from './message'
-import AdminModel from '../../models/admin/admin'
 
 class Coupon extends BaseClass {
   constructor() {

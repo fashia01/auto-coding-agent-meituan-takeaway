@@ -11,7 +11,6 @@ import Pay from '../controller/v1/pay';
 import Footprint from '../controller/v1/footprint';
 import Collection from '../controller/v1/collection';
 import Auth from '../controller/admin/auth';
-import Category from '../models/v1/category';
 import Ai from '../controller/v1/ai';
 import Push from '../controller/v1/push';
 import MessageCtrl from '../controller/v1/message';

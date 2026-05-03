@@ -148,11 +148,11 @@ class Pay extends BaseClass {
         for (let key in payData) {
             formData.append(key, payData[key]);
         }
-        let result = await fetch('http://pay.trsoft.xin/order/trpayGetWay', {
+        const fetchResult = await fetch('http://pay.trsoft.xin/order/trpayGetWay', {
             method: 'POST',
             body: formData
         })
-        return result = await result.json();
+        return await fetchResult.json();
     }
 
     //生成签名

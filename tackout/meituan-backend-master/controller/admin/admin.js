@@ -438,8 +438,7 @@ class Admin extends BaseClass {
   }
 
   encryption(password) {
-    const md5password = this.Md5(this.Md5(password));
-    return md5password
+    return this.Md5(this.Md5(password))
   }
 
   //md5加密
