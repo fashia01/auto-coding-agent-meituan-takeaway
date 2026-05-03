@@ -1,6 +1,7 @@
 import BaseClass from '../../prototype/baseClass'
 import CouponTemplate from '../../models/v1/coupon'
 import UserCoupon from '../../models/v1/user_coupon'
+import { writeMessage } from './message'
 import AdminModel from '../../models/admin/admin'
 
 class Coupon extends BaseClass {
@@ -136,6 +137,9 @@ class Coupon extends BaseClass {
         expire_at: expireAt
       })
       await uc.save()
+      // 领券成功写消息中心
+      const expireStr = `${expireAt.getMonth()+1}-${expireAt.getDate()}前有效`
+      writeMessage(user_id, 'coupon', '新券到账 🎫', `成功领取「${tpl.name}」，${expireStr}`, 'coupon', id)
       res.send({ status: 200, data: { user_coupon_id: id, expire_at: expireAt }, message: '领券成功' })
     } catch (err) {
       console.log('claimCoupon error', err)

@@ -1,5 +1,6 @@
 /* eslint-disable no-console */
 import { checkPushRules } from '../../utils/pushRules'
+import { writeMessage } from './message'
 
 class Push {
   constructor() {
@@ -20,6 +21,8 @@ class Push {
     try {
       const result = await checkPushRules(String(user_id))
       if (result) {
+        // 同时写入消息中心（持久化）
+        writeMessage(user_id, 'ai', 'AI 为您准备了建议 🤖', result.message, '', null)
         return res.send({
           has_push: true,
           message: result.message,

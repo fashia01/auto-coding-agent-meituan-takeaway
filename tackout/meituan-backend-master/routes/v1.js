@@ -14,6 +14,10 @@ import Auth from '../controller/admin/auth';
 import Category from '../models/v1/category';
 import Ai from '../controller/v1/ai';
 import Push from '../controller/v1/push';
+import MessageCtrl from '../controller/v1/message';
+import ActivityCtrl from '../controller/v1/activity';
+import PointsCtrl from '../controller/v1/points';
+import GroupOrderCtrl from '../controller/v1/group_order';
 
 const router = express.Router();
 router.get('/suggestion', Cites.suggestion);               //地址位置搜索
@@ -90,7 +94,30 @@ router.get('/home/recommend', Home.homeRecommend);   // 个性化推荐菜品（
 // 搜索
 router.get('/search/hot', Search.getHotKeywords);    // 热门搜索词
 
+// 营销活动
+router.get('/activity/active', ActivityCtrl.getActiveActivities);   // 获取当前有效活动
+router.post('/activity/:id/join', ActivityCtrl.joinFlashSale);      // 秒杀抢购
+
+// 积分系统
+router.get('/points/account', PointsCtrl.getAccount);              // 积分账户（余额+等级）
+router.get('/points/ledger', PointsCtrl.getLedger);                // 积分明细
+router.get('/points/redeem_options', PointsCtrl.getRedeemOptions); // 兑换选项列表
+router.post('/points/redeem', PointsCtrl.redeem);                  // 积分兑换
+
+// 拼单
+router.post('/group_order', GroupOrderCtrl.create);                    // 创建房间
+router.post('/group_order/:id/join', GroupOrderCtrl.join);             // 加入房间
+router.put('/group_order/:id/item', GroupOrderCtrl.updateItem);        // 更新菜品
+router.get('/group_order/:id', GroupOrderCtrl.get);                    // 查看房间
+router.post('/group_order/:id/checkout', GroupOrderCtrl.checkout);     // 确认下单
+
 // AI 主动推送
 router.get('/push/pending', Push.getPendingPush);    // 检查待推送建议
+
+// 消息中心
+router.get('/message/unread_count', MessageCtrl.getUnreadCount);  // 未读数（轻量）
+router.get('/message/list', MessageCtrl.listMessages);             // 消息列表
+router.post('/message/read_all', MessageCtrl.markAllRead);         // 全部已读
+router.post('/message/:id/read', MessageCtrl.markRead);            // 单条已读
 
 export default router;

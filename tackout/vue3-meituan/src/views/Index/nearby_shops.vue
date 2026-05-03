@@ -31,6 +31,10 @@
           <div v-else-if="getBusinessStatus(item.shopping_time_start, item.shopping_time_end) === 'closed'" class="closed-mask">
             <span class="closed-text">已打烊</span>
           </div>
+          <!-- 活动角标 -->
+          <span v-if="activeRestaurantIds.has(item.id)" class="activity-badge">
+            {{ flashSaleIds.has(item.id) ? '🔥秒杀' : '⚡限时优惠' }}
+          </span>
         </div>
 
         <!-- 商家信息 -->
@@ -102,6 +106,26 @@ const { address } = storeToRefs(addressStore)
 
 const shopLists = ref([])
 const loading = ref(false)
+const activeRestaurantIds = ref(new Set())   // 有活动的餐馆 id 集合
+const flashSaleIds = ref(new Set())           // 有秒杀活动的餐馆 id 集合
+
+async function fetchActiveActivities() {
+  try {
+    const resp = await fetch('http://localhost:3000/v1/activity/active', { credentials: 'include' })
+    const json = await resp.json()
+    const acts = json.data || []
+    const activeIds = new Set()
+    const flashIds = new Set()
+    acts.forEach(a => {
+      if (a.restaurant_id) {
+        activeIds.add(a.restaurant_id)
+        if (a.type === 'flash_sale') flashIds.add(a.restaurant_id)
+      }
+    })
+    activeRestaurantIds.value = activeIds
+    flashSaleIds.value = flashIds
+  } catch (e) { /* 静默 */ }
+}
 const noMore = ref(false)
 const page = ref(1)
 const limit = 4
@@ -191,6 +215,7 @@ onMounted(() => {
   } else {
     addressStore.fetchLocation()
   }
+  fetchActiveActivities()
 })
 
 watch(address, (value) => {
@@ -279,6 +304,18 @@ watch(address, (value) => {
         padding: 0.06rem 0.2rem;
         border-radius: 0.08rem;
       }
+    }
+    .activity-badge {
+      position: absolute;
+      top: 0.12rem;
+      left: 0.12rem;
+      font-size: 0.22rem;
+      padding: 0.04rem 0.14rem;
+      background: linear-gradient(135deg, #f60, #ffd161);
+      color: #fff;
+      border-radius: 0.2rem;
+      font-weight: bold;
+      pointer-events: none;
     }
   }
 

@@ -9,6 +9,8 @@ import CouponTemplate from '../../models/v1/coupon'
 import { scheduleDelivery, orderTimers } from './pay'
 import { writeTasteLog } from './taste'
 import { subscribe, unsubscribe, broadcast } from '../../utils/orderSubscriptions'
+import { PointsAccount } from '../../models/v1/points'
+import { deductPoints } from './points'
 
 class Order extends BaseClass {
   constructor() {
@@ -26,7 +28,7 @@ class Order extends BaseClass {
 
   //下订单
   async makeOrder(req, res, next) {
-    let {restaurant_id, foods, address_id, remark = '', coupon_id} = req.body;
+    let {restaurant_id, foods, address_id, remark = '', coupon_id, use_points = false} = req.body;
     let user_id = req.session.admin_id || req.session.user_id;
     if (!restaurant_id && !foods && !address_id) {
       res.send({
@@ -67,8 +69,25 @@ class Order extends BaseClass {
           }
         }
 
+        // 积分抵扣计算
+        let points_discount = 0
+        let points_to_deduct = 0
+        if (use_points) {
+          try {
+            const uid = Number(values[2].id)
+            const pointsAcc = await PointsAccount.findOne({ user_id: uid }).lean()
+            if (pointsAcc && pointsAcc.balance >= 100) {
+              const basePrice = +(total_price - discount_amount).toFixed(2)
+              const maxDeduct = Math.floor(basePrice * 0.2)   // 最多抵扣20%
+              const usablePoints = Math.min(pointsAcc.balance, maxDeduct * 100)
+              points_discount = Math.floor(usablePoints / 100)  // 100分=1元
+              points_to_deduct = points_discount * 100
+            }
+          } catch (e) { /* 积分查询失败不影响下单 */ }
+        }
+
         let order_data = {
-          total_price: +(total_price - discount_amount).toFixed(2),
+          total_price: +(total_price - discount_amount - points_discount).toFixed(2),
           foods: values[0].order_foods,
           address: values[1]._id,
           user_id: values[2]._id,
@@ -81,16 +100,23 @@ class Order extends BaseClass {
           shipping_fee: restaurant.shipping_fee,
           create_time_timestamp: Math.floor(new Date().getTime() / 1000),
           coupon_id: coupon_id ? Number(coupon_id) : undefined,
-          discount_amount
+          discount_amount,
+          points_discount
         }
         let order = new OrderModel(order_data);
         await order.save();
+        // 扣除积分
+        if (points_to_deduct > 0) {
+          const uid = Number(values[2].id)
+          deductPoints(uid, points_to_deduct, values[3])
+        }
         res.send({
           status: 200,
           message: '提交订单成功，请尽快支付',
           order_id: values[3],
           total_price: order_data.total_price,
-          discount_amount
+          discount_amount,
+          points_discount
         })
       });
     } catch (err) {

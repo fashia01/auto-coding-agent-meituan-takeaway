@@ -19,4 +19,5 @@ router.delete('/address', Auth.auth, Admin.deleteAddress);      //删除收获�
 router.get('/user_statistic', Auth.authAdmin, Admin.userStatistic);      //用户信息
 router.post('/add_user', Auth.authAdmin, Admin.addUser);  // 新增用户
 router.post('/update_passwd', Auth.authAdmin, Admin.updatePasswd);  // 修改密码
+router.get('/invite_info', Auth.auth, Admin.getInviteInfo);          // 邀请码信息
 export default router;

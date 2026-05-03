@@ -6,6 +6,9 @@ dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 import { getUserTasteProfile } from './taste';
 import { writeTasteLog } from './taste';
 import { getCommentSummary } from './comment';
+import MessageModel from '../../models/v1/message';
+import ActivityModel from '../../models/v1/activity';
+import { PointsAccount } from '../../models/v1/points';
 
 import OpenAI from 'openai';
 import FoodModel from '../../models/v1/foods';
@@ -147,6 +150,23 @@ const tools = [
       name: 'view_cart',
       description: '当用户说"看看我购物车"、"购物车里有什么"时使用。触发前端展示当前购物车内容。',
       parameters: { type: 'object', properties: {}, required: [] }
+    }
+  },
+  // 查询用户消息中心（未读消息摘要）
+  {
+    type: 'function',
+    function: {
+      name: 'get_my_messages',
+      description: '当用户询问"我有什么消息"、"最近有什么通知"、"有没有新消息"时调用，返回最近未读消息摘要。',
+      parameters: {
+        type: 'object',
+        properties: {
+          limit: {
+            type: 'number',
+            description: '返回最近多少条消息，默认5条'
+          }
+        }
+      }
     }
   },
   // 查询餐馆用户评价摘要
@@ -302,11 +322,50 @@ async function executeTool(toolName, args) {
         if (t.discount_type === 'shipping') return '免配送费'
         return t.name
       });
+      // 查询当前有效活动（平台 + 该餐馆）
+      let activitiesInfo = []
+      try {
+        const now = new Date()
+        const actQuery = { start_at: { $lte: now }, end_at: { $gte: now } }
+        if (restaurant_id) {
+          actQuery.$or = [{ restaurant_id: null }, { restaurant_id: Number(restaurant_id) }]
+        }
+        const acts = await ActivityModel.find(actQuery).lean()
+        activitiesInfo = acts.map(a => {
+          const minutesLeft = Math.floor((new Date(a.end_at) - now) / 60000)
+          const timeDesc = minutesLeft > 60 ? `${Math.floor(minutesLeft/60)}小时后结束` : `${minutesLeft}分钟后结束`
+          if (a.type === 'flash_sale') {
+            return `秒杀「${a.name}」剩余${a.total_stock - a.sold_count}份，${timeDesc}`
+          }
+          return `限时活动「${a.name}」，${timeDesc}`
+        })
+      } catch (e) { /* 静默 */ }
+
+
+      // 查询用户积分余额
+      let points_balance = 0
+      let points_deductible = 0
+      let pointsSummary = ''
+      try {
+        if (args._user_id) {
+          const acc = await PointsAccount.findOne({ user_id: Number(args._user_id) }).lean()
+          if (acc) {
+            points_balance = acc.balance || 0
+            // 假设订单金额未知，提示每100积分=1元
+            points_deductible = Math.floor(points_balance / 100)
+            if (points_balance > 0) {
+              pointsSummary = `；您有 ${points_balance} 积分，可抵扣最多 ¥${points_deductible}`
+            }
+          }
+        }
+      } catch (e) { /* 静默 */ }
+
       return {
         promotions: templates.map(t => ({ id: t.id, name: t.name, type: t.discount_type, threshold: t.threshold, value: t.value })),
-        summary: `当前可用优惠：${summaries.join('、')}`
-      };
-    } catch (err) {
+        points_balance,
+        points_deductible,
+        summary: `当前可用优惠：${summaries.join('、')}${activitiesInfo.length ? '；' + activitiesInfo.join('；') : ''}${pointsSummary}`
+      };    } catch (err) {
       return { promotions: [], summary: '获取优惠信息失败' };
     }
   }
@@ -362,6 +421,31 @@ async function executeTool(toolName, args) {
       };
     } catch (err) {
       return { action: 'add', success: false, message: '加购失败，请重试' };
+    }
+  }
+
+  // ── get_my_messages：查询用户未读消息 ────────────────────────
+  if (toolName === 'get_my_messages') {
+    const { limit: msgLimit = 5 } = args
+    try {
+      // user_id 从调用方传入（aiChat 传递）
+      const uid = args._user_id
+      if (!uid) return { messages: [], summary: '请先登录后再查询消息' }
+      const msgs = await MessageModel.find({ user_id: Number(uid), is_read: false })
+        .sort({ created_at: -1 })
+        .limit(Number(msgLimit))
+        .lean()
+      const total = await MessageModel.countDocuments({ user_id: Number(uid), is_read: false })
+      if (!msgs.length) return { messages: [], total: 0, summary: '暂无未读消息' }
+      const formatted = msgs.map(m => ({
+        category: m.category,
+        title: m.title,
+        content: m.content,
+        time: m.created_at
+      }))
+      return { messages: formatted, total, summary: `您有 ${total} 条未读消息` }
+    } catch (err) {
+      return { messages: [], summary: '获取消息失败' }
     }
   }
 
@@ -728,6 +812,10 @@ export async function aiChat(req, res) {
 - 需要 restaurant_id，从 search_and_rank_foods 结果中获取
 - 用户询问特定方面时填写 keyword（如"辣度"/"分量"/"速度"）
 
+## 消息查询工具使用规则（get_my_messages）
+- 当用户询问"我有什么消息"、"最近有什么通知"、"有没有新消息"时调用
+- 无需任何参数，直接调用即可
+
 ## 套餐规划工具使用规则（plan_meal_combo）
 - 当用户提到**多人就餐**（如"我们4个人"、"一桌菜"）、**设定预算**（如"预算150"）、或说"帮我们点餐"时，优先使用 plan_meal_combo。
 - **plan_meal_combo vs search_and_rank_foods 区分**：
@@ -758,7 +846,7 @@ export async function aiChat(req, res) {
 
       sendEvent(res, { type: 'status', content: toolCall.function.name === 'plan_meal_combo' ? '正在为您规划套餐方案...' : '正在为您分析需求并搜索菜品...' });
 
-      const toolResult = await executeTool(toolCall.function.name, toolArgs);
+      const toolResult = await executeTool(toolCall.function.name, { ...toolArgs, _user_id: user_id });
 
       // 购物车操作工具处理（add_to_cart / clear_cart / view_cart）
       const cartTools = new Set(['add_to_cart', 'clear_cart', 'view_cart']);
@@ -807,6 +895,28 @@ export async function aiChat(req, res) {
         sendEvent(res, { type: 'done' });
         res.end();
         return;
+      }
+
+      // get_my_messages：用户消息摘要
+      if (toolCall.function.name === 'get_my_messages') {
+        const msgsResultMsg = {
+          role: 'tool',
+          tool_call_id: toolCall.id,
+          content: JSON.stringify(toolResult)
+        }
+        const msgsStream = await openaiClient.chat.completions.create({
+          model: process.env.OPENAI_MODEL || 'deepseek-chat',
+          stream: true,
+          messages: [systemPrompt, ...messages, choice.message, msgsResultMsg]
+        })
+        for await (const chunk of msgsStream) {
+          const c0 = chunk.choices && chunk.choices[0]
+          const delta = c0 && c0.delta && c0.delta.content
+          if (delta) sendEvent(res, { type: 'text', content: delta })
+        }
+        sendEvent(res, { type: 'done' })
+        res.end()
+        return
       }
 
       // get_restaurant_reviews：评论摘要结果

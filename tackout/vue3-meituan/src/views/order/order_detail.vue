@@ -11,6 +11,7 @@
         <router-link v-if="orderData.code === 200 && !orderData.has_comment" class="action-btn comment-btn" :to="{ path: '/make_comment', query: { order_id: orderData.id } }" tag="span">去评价</router-link>
         <span v-if="canUrge" class="action-btn urge-btn" @click="handleUrge">催一下 🚀</span>
         <span v-if="canCancel" class="action-btn cancel-btn" @click="handleCancel">申请退款</span>
+        <span class="action-btn share-btn" @click="handleShare">分享 📤</span>
       </div>
       <div class="estimated-time" v-if="orderData.estimated_delivery_time && !isTerminal">
         预计 {{ formatTime(orderData.estimated_delivery_time) }} 送达
@@ -239,7 +240,18 @@ async function handleCancel() {
   } catch { /* 用户取消确认 */ }
 }
 
-onMounted(() => {
+async function handleShare() {
+  const foodNames = foods.value.slice(0, 3).map(f => f.name).join('、')
+  const extra = foods.value.length > 3 ? `等${foods.value.length}道菜` : ''
+  const text = `我在【${restaurantInfo.value.name || '美食餐馆'}】点了 ${foodNames}${extra}，共¥${orderData.value.total_price?.toFixed(2) || '0.00'}，快来一起吃吧！`
+  try {
+    await navigator.clipboard.writeText(text)
+    showToast({ message: '✅ 已复制分享内容', position: 'bottom' })
+  } catch (e) {
+    // 降级方案：弹出提示框
+    showToast({ message: text.slice(0, 30) + '...', position: 'bottom', duration: 3000 })
+  }
+}
   const id = route.query.id
   orderInfo({ order_id: id }).then((response) => {
     const res = response.data

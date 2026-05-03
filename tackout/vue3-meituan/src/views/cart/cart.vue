@@ -75,6 +75,7 @@
           @click="submit(restaurant_id)"
           :class="{ active: !selectFood[restaurant_id] || !selectFood[restaurant_id]['totalPrice'] }">去结算
         </span>
+        <span class="group-btn" @click="startGroupOrder(restaurant_id)">👥 拼单</span>
         <span class="total-price">￥{{ selectFood[restaurant_id] ? selectFood[restaurant_id]['totalPrice'].toFixed(2) : '0.00' }}</span>
       </div>
     </article>
@@ -90,6 +91,9 @@ import { ref, reactive, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import { useCartStore } from '@/stores'
+import { showToast } from 'vant'
+
+const API_BASE = 'http://localhost:3000'
 
 const router = useRouter()
 const cartStore = useCartStore()
@@ -172,8 +176,7 @@ function allSelectDelete(restaurant_id, boolean) {
   })
 }
 
-function submit(restaurant_id) {
-  if (!selectFood[restaurant_id] || !selectFood[restaurant_id].totalPrice) return
+function submit(restaurant_id) {  if (!selectFood[restaurant_id] || !selectFood[restaurant_id].totalPrice) return
   const restaurant = selectFood[restaurant_id]
   const foods = { totalPrice: 0, totalNum: 0 }
   Object.keys(restaurant).forEach(el => {
@@ -213,6 +216,29 @@ function deleteSingleFood(restaurant_id, food_id) {
 onMounted(() => {
   init()
 })
+
+async function startGroupOrder(restaurant_id) {
+  try {
+    const resp = await fetch(`${API_BASE}/v1/group_order`, {
+      method: 'POST', credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ restaurant_id: Number(restaurant_id) })
+    })
+    const json = await resp.json()
+    if (json.status === 200) {
+      const { room_id } = json.data
+      // 复制分享链接
+      const link = `${window.location.origin}${window.location.pathname}#/group_order?room=${room_id}`
+      try { await navigator.clipboard.writeText(link) } catch (e) {}
+      showToast({ message: `🎉 拼单房间已创建！链接已复制`, position: 'bottom', duration: 3000 })
+      router.push({ path: '/group_order', query: { room: room_id } })
+    } else {
+      showToast({ message: json.message || '创建失败', position: 'bottom' })
+    }
+  } catch (e) {
+    showToast({ message: '网络错误', position: 'bottom' })
+  }
+}
 </script>
 
 <style rel="stylesheet/scss" lang="scss" scoped>
@@ -275,6 +301,12 @@ onMounted(() => {
       margin-right: 0.1rem; text-align: center; font-size: 0.5rem; background: $mtYellow;
       display: inline-block; @include px2rem(width, 186); @include px2rem(line-height, 68);
       &.active { background: $mtGrey; }
+    }
+    .group-btn {
+      margin-right: 0.1rem; text-align: center; font-size: 0.36rem;
+      background: #fff3e0; color: #f60; border: 1px solid #f60;
+      display: inline-block; @include px2rem(width, 140); @include px2rem(line-height, 68);
+      cursor: pointer; border-radius: 0.06rem;
     }
   }
   .btn-delete {

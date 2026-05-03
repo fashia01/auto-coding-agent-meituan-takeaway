@@ -159,6 +159,26 @@ const routes = [
     component: () => import('@/views/404/error.vue')
   },
   {
+    path: '/message',
+    name: '消息中心',
+    component: () => import('@/views/message/message.vue')
+  },
+  {
+    path: '/points',
+    name: '我的积分',
+    component: () => import('@/views/points/points.vue')
+  },
+  {
+    path: '/share',
+    name: '订单分享',
+    component: () => import('@/views/share/share.vue')
+  },
+  {
+    path: '/group_order',
+    name: '拼单',
+    component: () => import('@/views/group_order/group_order.vue')
+  },
+  {
     path: '/:pathMatch(.*)*',
     redirect: '/error'
   }

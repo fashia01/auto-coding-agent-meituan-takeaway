@@ -75,9 +75,21 @@
       </div>
     </div>
 
+    <!-- 积分抵扣行 -->
+    <div class="points-container" v-if="pointsBalance > 0">
+      <div class="points-left">
+        <span class="points-icon">🪙</span>
+        <span class="points-text">积分抵扣</span>
+        <span class="points-hint">您有 <strong>{{ pointsBalance }}</strong> 积分，可抵扣
+          <strong>¥{{ pointsDeductible }}</strong></span>
+      </div>
+      <van-switch v-model="usePoints" size="20px" active-color="#ffd161" />
+    </div>
+
     <div class="bottom">
       <div class="left">
-        <span class="discount-fee" v-if="discountAmount > 0">已优惠￥{{ discountAmount }}</span>
+        <span class="discount-fee" v-if="discountAmount > 0 || pointsDiscountAmt > 0">
+          已优惠￥{{ (Number(discountAmount) + Number(pointsDiscountAmt)).toFixed(2) }}</span>
         <span class="discount-fee" v-else>已优惠￥0</span>
         <span class="total">合计<strong>￥{{ finalPrice }}</strong></span>
       </div>
@@ -125,7 +137,20 @@ const discountAmount = computed(() => {
   if (c.discount_type === 'shipping') return Number(poi_info.value?.shipping_fee || 0)
   return 0
 })
-const finalPrice = computed(() => Math.max(0, Number(totalPrice.value) - discountAmount.value).toFixed(2))
+
+// 积分
+const pointsBalance = ref(0)
+const usePoints = ref(false)
+const pointsDeductible = computed(() => {
+  const base = Math.max(0, Number(totalPrice.value) - discountAmount.value)
+  const maxDeduct = Math.floor(base * 0.2)
+  return Math.min(Math.floor(pointsBalance.value / 100), maxDeduct)
+})
+const pointsDiscountAmt = computed(() => usePoints.value ? pointsDeductible.value : 0)
+
+const finalPrice = computed(() =>
+  Math.max(0, Number(totalPrice.value) - discountAmount.value - pointsDiscountAmt.value).toFixed(2)
+)
 
 const gender = computed(() => defineAddress.value.gender === 'male' ? '先生' : '女士')
 
@@ -158,7 +183,8 @@ function submit() {
     restaurant_id: restaurant_id.value,
     foods,
     address_id: defineAddress.value.id,
-    ...(selectedCoupon.value ? { coupon_id: selectedCoupon.value.user_coupon_id } : {})
+    ...(selectedCoupon.value ? { coupon_id: selectedCoupon.value.user_coupon_id } : {}),
+    ...(usePoints.value ? { use_points: true } : {})
   }).then((response) => {
     if (response.data.status === 200) {
       router.push({ path: '/pay', query: { order_id: response.data.order_id } })
@@ -194,6 +220,11 @@ onMounted(() => {
     }).then(res => {
       if (res.data?.status === 200) availableCoupons.value = res.data.data || []
     }).catch(() => {})
+    // 查询积分余额
+    fetch('http://localhost:3000/v1/points/account', { credentials: 'include' })
+      .then(r => r.json()).then(json => {
+        if (json.status === 200) pointsBalance.value = json.data.balance || 0
+      }).catch(() => {})
   })
 })
 </script>
@@ -256,6 +287,22 @@ $grey: #666;
     margin-bottom: 0.16rem;
     .coupon-saving-tip {
       padding: 0 0.3rem 0.2rem;
+    }
+  }
+  .points-container {
+    background: #fff;
+    padding: 0.24rem 0.3rem;
+    margin-bottom: 0.16rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    .points-left {
+      display: flex;
+      align-items: center;
+      gap: 0.12rem;
+      .points-icon { font-size: 0.36rem; }
+      .points-text { font-size: 0.28rem; color: #333; font-weight: 500; }
+      .points-hint { font-size: 0.24rem; color: #999; strong { color: #f60; } }
     }
   }
   .bottom {

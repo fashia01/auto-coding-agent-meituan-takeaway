@@ -31,6 +31,8 @@
         <span class="active-number" @click="showStoreDetail()">{{ discountsLength }}个活动 > </span>
       </div>
     </div>
+    <!-- AI 营销活动 Banner -->
+    <ActivityBanner :restaurant-id="restaurant_id" />
     <!-- 导航 -->
     <div class="nav">
       <router-link :to="{ path: '/store/menu', query: { id: restaurant_id } }" class="menu" active-class="active">
@@ -64,6 +66,7 @@ import { useRoute } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import { useRestaurantStore } from '@/stores'
 import StoreDetail from './store_detail.vue'
+import ActivityBanner from './components/ActivityBanner.vue'
 import { addFootprint, addCollection, deleteCollection, getCollection } from '@/api/user'
 
 const route = useRoute()

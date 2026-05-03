@@ -3,6 +3,13 @@ import crypto from 'crypto'
 import AdminModel from '../../models/admin/admin'
 import AddressModel from '../../models/admin/address'
 import Config from '../../config'
+import UserCoupon from '../../models/v1/user_coupon'
+import CouponTemplate from '../../models/v1/coupon'
+import Invite from '../../models/admin/invite'
+
+function genInviteCode() {
+  return Math.random().toString(36).slice(2, 8).toUpperCase()
+}
 
 class Admin extends BaseClass {
   constructor() {
@@ -13,6 +20,7 @@ class Admin extends BaseClass {
     this.addAddress = this.addAddress.bind(this);
     this.addUser = this.addUser.bind(this);
     this.updatePasswd = this.updatePasswd.bind(this);
+    this.getInviteInfo = this.getInviteInfo.bind(this);
   }
 
   //前台登录
@@ -38,13 +46,56 @@ class Admin extends BaseClass {
           id: user_id,                //用户id
           status: 1,                  //1为用户 2为商家
           city: cityInfo.city,         //登录城市
-          avatar: 'http://i.waimai.meituan.com/static/img/default-avatar.png'
+          avatar: 'http://i.waimai.meituan.com/static/img/default-avatar.png',
+          invite_code: genInviteCode()  // 生成专属邀请码
         };
         await new AdminModel(createData).save();
         req.session.user_id = user_id;    //设置session
         console.log('=== Session Set ===');
         console.log('Session ID:', req.sessionID);
         console.log('Session data:', req.session);
+
+        // 记录邀请关系（若携带 invite query 参数）
+        try {
+          const inviteCode = req.query.invite || req.body.invite
+          if (inviteCode) {
+            const inviter = await AdminModel.findOne({ invite_code: inviteCode.toUpperCase(), status: 1 }).lean()
+            if (inviter && inviter.id !== user_id) {
+              await Invite.create({ inviter_id: inviter.id, invitee_id: user_id, status: 'pending', created_at: new Date() })
+              console.log(`[邀请] ${inviter.id} → ${user_id}`)
+            }
+          }
+        } catch (e) { console.log('[邀请] 记录失败:', e.message) }
+
+        // 新人礼包：自动发放3张初始券
+        try {
+          const existing = await UserCoupon.findOne({ user_id, status: 'unused', source: 'new_user_gift' })
+          if (!existing) {
+            // 查找礼包券模板（满20减3/免配送费/9折券）
+            const giftTemplateIds = [1001, 1021, 1011]  // 满20减3, 免配送费, 9折
+            const templates = await CouponTemplate.find({ id: { $in: giftTemplateIds } }).lean()
+            const insertCoupons = []
+            for (const tpl of templates) {
+              const validDays = tpl.id === 1011 ? 3 : 30  // 9折券只有3天
+              insertCoupons.push({
+                id: Date.now() + tpl.id,
+                user_id,
+                template_id: tpl.id,
+                status: 'unused',
+                expire_at: new Date(Date.now() + validDays * 86400000),
+                claimed_at: new Date(),
+                source: 'new_user_gift'
+              })
+            }
+            if (insertCoupons.length) {
+              await UserCoupon.insertMany(insertCoupons)
+              console.log(`[新人礼包] 用户 ${user_id} 获得 ${insertCoupons.length} 张礼包券`)
+            }
+          }
+        } catch (e) {
+          console.log('[新人礼包] 发放失败（不影响注册）:', e.message)
+        }
+
         res.send({
           status: 200,
           success: '注册用户并登录成功',
@@ -509,6 +560,38 @@ class Admin extends BaseClass {
         message: '更改密码出错'
       })
       ;
+    }
+  }
+  // GET /admin/invite_info — 获取当前用户邀请码和已邀请人数
+  async getInviteInfo(req, res) {
+    const user_id = req.session && (req.session.admin_id || req.session.user_id)
+    if (!user_id) return res.send({ status: -1, message: '未登录' })
+    try {
+      const uid = Number(user_id)
+      let admin = await AdminModel.findOne({ id: uid }).lean()
+      if (!admin) return res.send({ status: -1, message: '用户不存在' })
+
+      // 懒生成邀请码
+      if (!admin.invite_code) {
+        const code = genInviteCode()
+        await AdminModel.updateOne({ id: uid }, { $set: { invite_code: code } })
+        admin.invite_code = code
+      }
+
+      const inviteCount = await Invite.countDocuments({ inviter_id: uid })
+      const rewardedCount = await Invite.countDocuments({ inviter_id: uid, status: 'rewarded' })
+
+      res.send({
+        status: 200,
+        data: {
+          invite_code: admin.invite_code,
+          invite_link: `#/login?invite=${admin.invite_code}`,
+          invite_count: inviteCount,
+          rewarded_count: rewardedCount
+        }
+      })
+    } catch (err) {
+      res.send({ status: -1, message: '获取邀请信息失败' })
     }
   }
 }

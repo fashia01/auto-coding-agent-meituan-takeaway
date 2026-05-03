@@ -35,7 +35,8 @@ const orderSchema = new Schema({
     estimated_delivery_time: Date,                         // 预计送达时间
     urge_count: {type: Number, default: 0},               // 催单次数
     coupon_id: Number,                                     // 使用的优惠券ID
-    discount_amount: {type: Number, default: 0}           // 优惠金额
+    discount_amount: {type: Number, default: 0},          // 优惠金额
+    points_discount: {type: Number, default: 0}           // 积分抵扣金额
 })
 
 orderSchema.index({id: 1});

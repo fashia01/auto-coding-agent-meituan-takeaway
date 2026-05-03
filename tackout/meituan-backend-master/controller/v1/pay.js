@@ -9,6 +9,10 @@ import { writeTasteLog } from './taste'
 import fetch from 'node-fetch';
 import FormData from 'form-data';
 import { broadcast } from '../../utils/orderSubscriptions'
+import { writeMessage } from './message'
+import AdminModel from '../../models/admin/admin'
+import { awardPoints } from './points'
+import Invite from '../../models/admin/invite'
 
 class Pay extends BaseClass {
     constructor() {
@@ -252,6 +256,16 @@ function scheduleDelivery(order_id) {
             'delivering': '骑手配送中',
             'delivered': '已送达'
         }
+        const messageTitleMap = {
+            'accepted':   '商家已接单',
+            'delivering': '骑手正在配送',
+            'delivered':  '订单已送达'
+        }
+        const messageContentMap = {
+            'accepted':   '商家已接单，正在为您用心备餐 🍳',
+            'delivering': '骑手已取餐，正在飞速赶来 🛵',
+            'delivered':  '餐品已送达，祝您用餐愉快 🎉 记得评价哦~'
+        }
         try {
             const now = new Date()
             await OrderModel.updateOne(
@@ -274,6 +288,15 @@ function scheduleDelivery(order_id) {
             // 终态时发送 done 事件
             if (status === 'delivered' || status === 'cancelled') {
                 broadcast(order_id, { type: 'done' })
+            }
+            // 写入消息中心（仅对 accepted/delivering/delivered 写消息）
+            if (messageTitleMap[status] && order && order.user_id) {
+                try {
+                    const admin = await AdminModel.findOne({ _id: order.user_id }).lean()
+                    if (admin && admin.id) {
+                        writeMessage(admin.id, 'order', messageTitleMap[status], messageContentMap[status], 'order', order_id)
+                    }
+                } catch (e) { /* 消息写入失败不影响主流程 */ }
             }
         } catch (err) {
             console.log(`[状态机] 更新状态失败: ${order_id} → ${status}`, err)
@@ -333,6 +356,34 @@ function scheduleDelivery(order_id) {
                 // user_id 存的是 ObjectId，需用数字 id；从 session 无法取得，用 order 的 restaurant_id 作为关联
                 const userId = order.user_id ? order.user_id.toString() : null
                 await writeTasteLog(userId, tags, priceRange, order.restaurant_id, 'order_delivered')
+            }
+            // 发放积分（1元=1积分，等级加成在 awardPoints 内计算）
+            if (order.total_price && userId) {
+                const admin = await AdminModel.findOne({ _id: order.user_id }).lean().catch(() => null)
+                if (admin && admin.id) {
+                    await awardPoints(admin.id, Math.floor(order.total_price), order_id)
+
+                    // 邀请奖励：首单送达时检查 pending 邀请关系，双方各发满20减5券
+                    try {
+                        const invite = await Invite.findOne({ invitee_id: admin.id, status: 'pending' }).lean()
+                        if (invite) {
+                            // 检查是否真是首单（订单计数=1）
+                            const prevOrders = await OrderModel.countDocuments({ user_id: order.user_id })
+                            if (prevOrders <= 1) {
+                                const now = new Date()
+                                const expireAt = new Date(now.getTime() + 30 * 86400000)
+                                const lastCoupon = await UserCoupon.findOne().sort({ id: -1 }).lean()
+                                let nextId = (lastCoupon ? lastCoupon.id : 90000) + 1
+                                // 给被邀请人发券
+                                await UserCoupon.create({ id: nextId++, user_id: admin.id, template_id: 1001, status: 'unused', expire_at: expireAt, claimed_at: now, source: 'invite_reward' })
+                                // 给邀请人发券
+                                await UserCoupon.create({ id: nextId, user_id: invite.inviter_id, template_id: 1001, status: 'unused', expire_at: expireAt, claimed_at: now, source: 'invite_reward' })
+                                await Invite.updateOne({ _id: invite._id }, { $set: { status: 'rewarded' } })
+                                console.log(`[邀请奖励] inviter=${invite.inviter_id} invitee=${admin.id} 各发满20减3券`)
+                            }
+                        }
+                    } catch (e) { console.log('[邀请奖励] 失败:', e.message) }
+                }
             }
         } catch (err) {
             console.log('[状态机] writeTasteLog on delivered failed:', err.message)

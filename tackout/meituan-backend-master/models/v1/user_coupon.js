@@ -10,6 +10,7 @@ const userCouponSchema = new Schema({
   status: {type: String, enum: ['unused', 'used', 'expired'], default: 'unused'},
   expire_at: {type: Date, required: true},            // 过期时间
   used_order_id: {type: Number, default: null},        // 使用时对应的订单ID
+  source: {type: String, default: ''},                  // 来源标识，如 'new_user_gift'
   claimed_at: {type: Date, default: Date.now}
 })
 

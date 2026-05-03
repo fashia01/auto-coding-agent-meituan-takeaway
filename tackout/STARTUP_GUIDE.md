@@ -59,6 +59,7 @@ npx babel-node seed-cities.js
 ```env
 OPENAI_API_KEY=你的API Key
 OPENAI_BASE_URL=https://api.deepseek.com/v1
+OPENAI_MODEL=deepseek-chat
 ```
 
 > DeepSeek API Key 申请：https://platform.deepseek.com/api_keys
@@ -117,7 +118,6 @@ App running at:
 | 页面 | 地址 |
 |------|------|
 | 首页 | http://localhost:8080 |
-| AI 智能推荐 | http://localhost:8080/#/ai_chat |
 | 登录 / 注册 | http://localhost:8080/#/login |
 | 搜索餐馆 | http://localhost:8080/#/search |
 | 我的订单 | http://localhost:8080/#/order |
@@ -132,8 +132,6 @@ vue-meituan-master/src/
 ├── components/           # 全局公共组件
 ├── views/
 │   ├── ai_chat/          # AI 对话推荐页
-│   │   ├── ai_chat.vue
-│   │   └── components/   # ChatBubble / FoodCard / ChatInput
 │   ├── Index/            # 首页
 │   ├── store/            # 餐馆菜单页
 │   ├── cart/             # 购物车
@@ -186,7 +184,7 @@ npm run dev
 | 页面 | 地址 |
 |------|------|
 | 首页 | http://localhost:8080 |
-| AI 智能推荐 | http://localhost:8080/#/ai_chat |
+| AI 智能点餐 | http://localhost:8080/#/ai_chat |
 | 登录 / 注册 | http://localhost:8080/#/login |
 | 搜索餐馆 | http://localhost:8080/#/search |
 | 我的订单 | http://localhost:8080/#/order |
@@ -197,27 +195,35 @@ npm run dev
 vue3-meituan/src/
 ├── api/                  # Axios 请求封装（读取 VITE_API_BASE 环境变量）
 ├── stores/               # Pinia 状态管理（cart / address / restaurant）
-│   ├── cart.js           # 购物车（含 localStorage 持久化）
+│   ├── cart.js           # 购物车（含 localStorage 持久化 + 跨店保护）
 │   ├── address.js        # 定位地址
 │   └── restaurant.js     # 当前餐馆信息
 ├── router/index.js       # 路由配置（动态 import() 懒加载）
 ├── components/           # 全局公共组件
-│   ├── AppHead.vue       # 顶部导航（封装 van-nav-bar）→ 全局注册为 v-head
-│   ├── AppBottom.vue     # 底部导航（封装 van-tabbar）→ 全局注册为 v-bottom
-│   ├── StarRating.vue    # 星级评分（封装 van-rate）→ 全局注册为 v-star
-│   ├── FoodSelector.vue  # 加减步进器（封装 van-stepper）
-│   └── AlertTip.vue      # 提示弹窗（封装 van-toast）
+│   ├── AppHead.vue       # 顶部导航 → 全局注册为 v-head
+│   ├── AppBottom.vue     # 底部导航 → 全局注册为 v-bottom
+│   ├── StarRating.vue    # 星级评分 → 全局注册为 v-star
+│   ├── FoodSelector.vue  # 加减步进器
+│   └── AlertTip.vue      # 提示弹窗
 ├── views/
-│   ├── ai_chat/          # AI 对话推荐页（script setup 重写）
-│   ├── Index/            # 首页（van-list 无限滚动 + van-skeleton 骨架屏）
-│   ├── store/            # 餐馆菜单页（CSS sticky 双栏布局）
-│   ├── cart/             # 购物车（van-swipe-cell 左滑删除）
-│   ├── confirm_order/    # 确认订单
-│   ├── pay/              # 支付页（保留模拟支付逻辑）
+│   ├── ai_chat/          # AI 对话智能点餐页
+│   │   ├── ai_chat.vue   # 主页面（SSE 流式，含推送上下文注入）
+│   │   └── components/
+│   │       ├── CartActionCard.vue    # 购物车操作卡片（加购/清空/查看）
+│   │       ├── ComboCard.vue         # AI 套餐规划卡片（一键加购）
+│   │       ├── ReviewSummaryCard.vue # AI 评论口碑摘要卡片
+│   │       ├── FoodCard.vue          # 单品推荐卡片
+│   │       └── ChatBubble.vue        # 消息气泡
+│   ├── Index/            # 首页（含 AI 主动推送气泡）
+│   ├── store/            # 餐馆菜单页
+│   ├── cart/             # 购物车
+│   ├── confirm_order/    # 确认订单（支持优惠券抵扣）
+│   ├── pay/              # 支付页（模拟支付）
 │   └── order/            # 订单列表 / 详情
-├── styles/
-│   └── var.css           # 美团黄主题 CSS 变量（覆盖 Vant 默认主题）
-└── config.js             # API 地址等配置
+│       └── components/
+│           └── DeliveryProgress.vue  # 实时配送进度条（SSE 驱动）
+└── styles/
+    └── var.css           # 美团黄主题 CSS 变量（覆盖 Vant 默认主题）
 ```
 
 ### 环境变量
@@ -227,16 +233,38 @@ vue3-meituan/src/
 VITE_API_BASE=http://localhost:3000
 ```
 
+### 主要功能特性
+
+| 功能 | 说明 |
+|------|------|
+| **AI 智能推荐** | DeepSeek 驱动，动态权重打分，支持关键词 + 价格筛选 |
+| **AI 对话式购物车** | 客户端意图识别，自然语言加购/清空/查看，跨店冲突保护 |
+| **AI 套餐规划** | 多人就餐套餐方案，程序校验预算 + 口味约束，一键加购 |
+| **AI 口碑摘要** | 查询真实用户评论，三维度评分 + LLM 一句话摘要 |
+| **AI 主动推送** | 基于下单规律主动在首页推送个性化建议，点击直通对话 |
+| **实时订单追踪** | SSE 长连接，订单状态机推进后零刷新更新页面 + 进度条 |
+| **口味画像** | TasteLog 正/负信号采集，个性化推荐 + 排除不喜欢标签 |
+| **优惠券** | 领券、下单抵扣、满减/折扣/免配送费类型 |
+
 ### 常见问题
 
+**Q：AI 功能不响应？**
+> 检查 `meituan-backend-master/.env` 中 `OPENAI_API_KEY` 是否已填写，后端日志有无报错。
+
+**Q：首页 AI 推送气泡不出现？**
+> 需要登录状态 + 有足够的 TasteLog 历史数据触发规则。新账号无历史数据不会触发，属正常行为。
+
+**Q：订单详情页进度条不更新？**
+> 确认后端已启动（3000 端口），SSE 依赖长连接，代理/防火墙可能拦截。
+
 **Q：页面尺寸比例正常吗？**
-> Vue 3 版本在 `index.html` 内联了 rem 适配脚本（等效 lib-flexible），在 375px 宽度下 `1rem = 37.5px`，与 Vue 2 版本完全一致。用移动端模拟器（Chrome DevTools → 375px）查看效果最佳。
+> 在 `index.html` 内联了 rem 适配脚本，375px 宽度下 `1rem = 37.5px`。用移动端模拟器（Chrome DevTools → 375px）查看效果最佳。
 
 **Q：商家图片全部显示空白？**
-> 已修复。确保 `main.js` 中已注册 `app.use(Lazyload)`，van-image 的 `lazy-load` 属性依赖此插件。
+> 确保 `main.js` 中已注册 `app.use(Lazyload)`，van-image 的 `lazy-load` 属性依赖此插件。
 
 **Q：首页商家全部显示「超出配送范围」？**
-> 已修复（后端 `.lean()` 查询 + 前端 firstFetch 竞争逻辑）。若仍出现，请重启后端服务后刷新页面。
+> 重启后端服务后刷新页面。
 
 ---
 
@@ -250,7 +278,7 @@ VITE_API_BASE=http://localhost:3000
 | UI 组件库 | Mint-UI 2（已停止维护） | Vant 4 |
 | 编码风格 | Options API | `<script setup>` Composition API |
 | 开发启动速度 | ~8s | <1s |
-| 热更新速度 | 慢（Webpack HMR） | 极快（Vite HMR） |
+| AI 功能 | 基础推荐 | ✅ 完整（套餐/口碑/推送/实时追踪） |
 | 推荐程度 | 仅用于参考对比 | ✅ 推荐日常开发使用 |
 
 ---
