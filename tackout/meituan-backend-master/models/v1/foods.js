@@ -32,7 +32,12 @@ const foodsSchema = new mongoose.Schema({
         description:String,     //详细描述
         price:String,           //价格
     }],
-    created_at:{type:Date,default:new Date()}
+    created_at:{type:Date,default:new Date()},
+    nutrition_tags: {
+        calories_per_100g: { type: Number, default: null },   // LLM 推断热量（kcal/100g），null=未知
+        allergens: { type: [String], default: [] },           // 过敏原，如 ['花生','虾','奶制品']
+        diet_tags: { type: [String], default: [] }            // 饮食标签，如 ['轻食','素食','低碳']
+    }
 });
 
 const Foods = mongoose.model('Foods', foodsSchema);

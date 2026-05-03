@@ -2,14 +2,18 @@
   <div class="chat-bubble-wrap" :class="role">
     <div class="bubble" :class="role">
       <span class="content">{{ content }}</span>
+      <ReasoningTrace v-if="role === 'assistant' && reasoningSteps && reasoningSteps.length" :steps="reasoningSteps" />
     </div>
   </div>
 </template>
 
 <script setup>
+import ReasoningTrace from './ReasoningTrace.vue'
+
 defineProps({
   role: { type: String, default: 'assistant' },
-  content: { type: String, default: '' }
+  content: { type: String, default: '' },
+  reasoningSteps: { type: Array, default: () => [] }
 })
 </script>
 

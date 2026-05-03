@@ -10,7 +10,7 @@
       </div>
 
       <div v-for="(msg, index) in messages" :key="index" class="message-item">
-        <chat-bubble :role="msg.role" :content="msg.content"></chat-bubble>
+        <chat-bubble :role="msg.role" :content="msg.content" :reasoning-steps="msg.reasoningSteps"></chat-bubble>
 
         <!-- 评判标准卡片 -->
         <div v-if="msg.criteria" class="criteria-card">
@@ -216,9 +216,9 @@ async function sendMessage(text) {
   // ── 加购意图检测结束，以下走 LLM 流程 ──
   messages.value.push({ role: 'user', content: text, foods: [] })
 
-  // 2. 推入占位助手消息
+  // 2. 推入占位助手消息（含 reasoningSteps 字段）
   const assistantIndex = messages.value.length
-  messages.value.push({ role: 'assistant', content: '', foods: [], criteria: null, combo: null, review: null })
+  messages.value.push({ role: 'assistant', content: '', foods: [], criteria: null, combo: null, review: null, reasoningSteps: [] })
 
   isLoading.value = true
   nextTick(() => scrollToBottom())
@@ -334,6 +334,12 @@ async function sendMessage(text) {
           } else if (cartData.action === 'view') {
             messages.value[assistantIndex].cartAction = cartData
           }
+        } else if (event.type === 'reasoning') {
+          // 推理步骤：追加到当前气泡
+          if (!messages.value[assistantIndex].reasoningSteps) {
+            messages.value[assistantIndex].reasoningSteps = []
+          }
+          messages.value[assistantIndex].reasoningSteps.push({ step: event.step, detail: event.detail || '' })
         } else if (event.type === 'text') {
           if (messages.value[assistantIndex].content === '正在为您分析需求并搜索菜品...') {
             messages.value[assistantIndex].content = ''

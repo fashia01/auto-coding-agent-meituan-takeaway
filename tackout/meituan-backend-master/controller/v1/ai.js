@@ -9,6 +9,9 @@ import { getCommentSummary } from './comment';
 import MessageModel from '../../models/v1/message';
 import ActivityModel from '../../models/v1/activity';
 import { PointsAccount } from '../../models/v1/points';
+import MemoryLog from '../../models/v1/memory_log';
+import DietaryConstraint from '../../models/v1/dietary_constraint';
+import AIInteractionLog from '../../models/v1/ai_interaction_log';
 
 import OpenAI from 'openai';
 import FoodModel from '../../models/v1/foods';
@@ -167,6 +170,31 @@ const tools = [
           }
         }
       }
+    }
+  },
+  // 饮食约束设置
+  {
+    type: 'function',
+    function: {
+      name: 'set_dietary_constraints',
+      description: '当用户提及减肥、热量控制、过敏原、素食、轻食等饮食约束时调用，保存用户的饮食偏好和限制。',
+      parameters: {
+        type: 'object',
+        properties: {
+          calories_limit: { type: 'number', description: '每餐热量上限（kcal），如600。0表示不限制' },
+          exclude_ingredients: { type: 'array', items: { type: 'string' }, description: '排除的食材，如["花生","虾"]' },
+          diet_mode: { type: 'string', enum: ['normal', 'light', 'keto', 'vegetarian'], description: '饮食模式' }
+        }
+      }
+    }
+  },
+  // 查询饮食约束
+  {
+    type: 'function',
+    function: {
+      name: 'get_dietary_constraints',
+      description: '查询用户当前设置的饮食约束，当用户问「我的饮食设置是什么」时调用',
+      parameters: { type: 'object', properties: {} }
     }
   },
   // 查询餐馆用户评价摘要
@@ -449,6 +477,40 @@ async function executeTool(toolName, args) {
     }
   }
 
+  // ── set_dietary_constraints：设置饮食约束 ────────────────────
+  if (toolName === 'set_dietary_constraints') {
+    const { calories_limit = 0, exclude_ingredients = [], diet_mode = 'normal' } = args
+    const uid = args._user_id
+    if (!uid) return { success: false, message: '未登录' }
+    try {
+      await DietaryConstraint.findOneAndUpdate(
+        { user_id: Number(uid) },
+        { $set: { calories_limit: Number(calories_limit), exclude_ingredients, diet_mode, updated_at: new Date() } },
+        { upsert: true }
+      )
+      const parts = []
+      if (calories_limit > 0) parts.push(`热量上限 ${calories_limit} kcal`)
+      if (exclude_ingredients.length) parts.push(`排除食材：${exclude_ingredients.join('、')}`)
+      if (diet_mode !== 'normal') parts.push(`饮食模式：${diet_mode}`)
+      return { success: true, message: `饮食约束已设置：${parts.join('；') || '已清除所有约束'}` }
+    } catch (err) {
+      return { success: false, message: '设置失败' }
+    }
+  }
+
+  // ── get_dietary_constraints：查询饮食约束 ────────────────────
+  if (toolName === 'get_dietary_constraints') {
+    const uid = args._user_id
+    if (!uid) return { constraint: null, message: '未登录' }
+    try {
+      const c = await DietaryConstraint.findOne({ user_id: Number(uid) }).lean()
+      if (!c) return { constraint: null, message: '您尚未设置任何饮食约束' }
+      return { constraint: c, message: '当前饮食约束已获取' }
+    } catch (err) {
+      return { constraint: null, message: '查询失败' }
+    }
+  }
+
   // ── get_restaurant_reviews：查询餐馆评论摘要 ─────────────────
   if (toolName === 'get_restaurant_reviews') {
     const { restaurant_id, keyword, limit } = args
@@ -709,7 +771,59 @@ ${JSON.stringify(foodSummaries, null, 2)}
     }
   };
 
-  return { ranked, criteria };
+  // 应用饮食约束过滤（若用户有设置）
+  const constraint = args._constraint || null
+  const filterResult = applyDietaryFilter(ranked, constraint)
+  const filteredRanked = filterResult.foods
+
+  return {
+    ranked: filteredRanked,
+    criteria,
+    filtered_count: filterResult.filtered_count,
+    filter_reason: filterResult.filter_reason
+  };
+} ──────────────────────────────────────
+function applyDietaryFilter(foods, constraint) {
+  if (!constraint) return { foods, filtered_count: 0, filter_reason: '' }
+  const reasons = []
+  let filtered = foods
+  // 排除过敏原
+  if (constraint.exclude_ingredients && constraint.exclude_ingredients.length) {
+    const excl = constraint.exclude_ingredients.map(s => s.toLowerCase())
+    const before = filtered.length
+    filtered = filtered.filter(f => {
+      const allergens = (f.nutrition_tags && f.nutrition_tags.allergens) || []
+      return !allergens.some(a => excl.includes(a.toLowerCase()))
+    })
+    const removed = before - filtered.length
+    if (removed > 0) reasons.push(`过敏原过滤 ${removed} 道`)
+  }
+  // 热量过滤
+  if (constraint.calories_limit > 0) {
+    const before = filtered.length
+    filtered = filtered.filter(f => {
+      const cal = f.nutrition_tags && f.nutrition_tags.calories_per_100g
+      if (cal === null || cal === undefined) return true  // 未知热量保留
+      return cal <= constraint.calories_limit
+    })
+    const removed = before - filtered.length
+    if (removed > 0) reasons.push(`热量超标过滤 ${removed} 道`)
+  }
+  // 素食模式
+  if (constraint.diet_mode === 'vegetarian') {
+    const before = filtered.length
+    filtered = filtered.filter(f => {
+      const tags = (f.nutrition_tags && f.nutrition_tags.diet_tags) || []
+      return tags.includes('素食')
+    })
+    const removed = before - filtered.length
+    if (removed > 0) reasons.push(`非素食过滤 ${removed} 道`)
+  }
+  return {
+    foods: filtered,
+    filtered_count: foods.length - filtered.length,
+    filter_reason: reasons.length ? `根据您的饮食约束：${reasons.join('、')}` : ''
+  }
 }
 
 // -----------------------------------------------------------------------
@@ -722,6 +836,22 @@ function sendEvent(res, data) {
 // -----------------------------------------------------------------------
 // 主控制器：POST /v1/ai/chat
 // -----------------------------------------------------------------------
+// ── 埋点工具函数（异步，不阻塞主流程）────────────────────────
+let _aiLogIdCounter = Date.now()
+async function logAIEvent(user_id, session_id, event_type, tool_name = '', metadata = {}) {
+  try {
+    const id = ++_aiLogIdCounter
+    await AIInteractionLog.create({ id, user_id: Number(user_id) || null, session_id, event_type, tool_name, metadata, created_at: new Date() })
+  } catch (e) { /* 静默失败，不影响主流程 */ }
+}
+
+// ── SSE 推理步骤辅助函数 ──────────────────────────────────────
+function sendReasoningStep(res, step, detail = '') {
+  try {
+    res.write(`data: ${JSON.stringify({ type: 'reasoning', step, detail })}\n\n`)
+  } catch (e) { /* 静默 */ }
+}
+
 export async function aiChat(req, res) {
   const { messages, rejected_food_ids, push_context } = req.body;
 
@@ -736,6 +866,54 @@ export async function aiChat(req, res) {
 
   // 当前用户 ID（统一声明，供后续口味画像和负信号使用）
   const user_id = req.session && (req.session.admin_id || req.session.user_id)
+
+  // 生成 session_id（用于埋点关联）
+  const session_id = `${user_id || 'anon'}_${Date.now()}`
+
+  // 埋点：对话开始
+  if (user_id) logAIEvent(user_id, session_id, 'chat_start')
+
+  // ── 加载对话历史记忆（情节记忆层）────────────────────────────
+  let memoryHint = ''
+  if (user_id) {
+    try {
+      const recentMemory = await MemoryLog.find({ user_id: Number(user_id) })
+        .sort({ created_at: -1 }).limit(3).lean()
+      if (recentMemory.length) {
+        const memParts = recentMemory.map(m => {
+          const prefs = m.key_prefs && m.key_prefs.length ? `[偏好: ${m.key_prefs.join('、')}]` : ''
+          return `• ${prefs} ${m.summary}`.trim()
+        })
+        memoryHint = `\n\n## 历史偏好记忆（来自过往对话）\n${memParts.join('\n')}\n请在推荐时参考以上历史记忆，但以用户当次明确需求为优先。`
+      } else {
+        memoryHint = '\n\n## 历史偏好记忆\n暂无历史偏好记录（首次对话）。'
+      }
+      sendReasoningStep(res, '加载历史记忆', recentMemory.length ? `读取到 ${recentMemory.length} 条历史偏好` : '暂无历史记忆')
+    } catch (e) { /* 静默 */ }
+  }
+
+  // ── 加载饮食约束（约束规划层）──────────────────────────────
+  let constraintHint = ''
+  let activeConstraint = null
+  if (user_id) {
+    try {
+      activeConstraint = await DietaryConstraint.findOne({ user_id: Number(user_id) }).lean()
+      if (activeConstraint) {
+        const parts = []
+        if (activeConstraint.calories_limit > 0) parts.push(`热量上限：${activeConstraint.calories_limit} kcal/餐`)
+        if (activeConstraint.exclude_ingredients && activeConstraint.exclude_ingredients.length) {
+          parts.push(`排除食材（过敏/不喜欢）：${activeConstraint.exclude_ingredients.join('、')}`)
+        }
+        if (activeConstraint.diet_mode && activeConstraint.diet_mode !== 'normal') {
+          const modeMap = { light: '轻食模式', keto: '生酮饮食', vegetarian: '素食' }
+          parts.push(`饮食模式：${modeMap[activeConstraint.diet_mode] || activeConstraint.diet_mode}`)
+        }
+        if (parts.length) {
+          constraintHint = `\n\n## 当前饮食约束（用户已设置，推荐时必须遵守）\n${parts.map(p => `- ${p}`).join('\n')}`
+        }
+      }
+    } catch (e) { /* 静默 */ }
+  }
 
   // 处理被拒绝的菜品 ID：写入 ai_rejected 负信号
   if (user_id && rejected_food_ids && rejected_food_ids.length) {
@@ -821,7 +999,12 @@ export async function aiChat(req, res) {
   - 单人、找某类菜品 → search_and_rank_foods
   - 多人就餐、需要组合方案、提到预算上限 → plan_meal_combo
 - 收到 plan_meal_combo 结果后，自然介绍套餐亮点，说明荤素搭配和口味，鼓励用户点击"全部加入购物车"。
-- 若用户说"去掉那道汤"、"换一道菜"，理解为对上次套餐的修改，重新调用 plan_meal_combo 并在 constraints 中加入修改说明。${tasteHint}${push_context ? `\n\n## 本次对话背景（主动推送触发）\n${push_context}` : ''}`
+- 若用户说"去掉那道汤"、"换一道菜"，理解为对上次套餐的修改，重新调用 plan_meal_combo 并在 constraints 中加入修改说明。
+
+## 饮食约束工具使用规则（set_dietary_constraints / get_dietary_constraints）
+- **set_dietary_constraints**：当用户提及「减肥」「控制热量」「过敏」「素食」「生酮」「轻食」等关键词时主动调用，设置对应约束
+- **get_dietary_constraints**：当用户问「我的饮食设置是什么」「我设置了什么约束」时调用
+- 设置完成后告知用户：「已为您设置...，后续推荐将自动过滤不符合的菜品」${tasteHint}${memoryHint}${constraintHint}${push_context ? `\n\n## 本次对话背景（主动推送触发）\n${push_context}` : ''}`
   };
 
   try {
@@ -845,13 +1028,21 @@ export async function aiChat(req, res) {
 
       sendEvent(res, { type: 'status', content: toolCall.function.name === 'plan_meal_combo' ? '正在为您规划套餐方案...' : '正在为您分析需求并搜索菜品...' });
 
-      const toolResult = await executeTool(toolCall.function.name, { ...toolArgs, _user_id: user_id });
+      const toolResult = await executeTool(toolCall.function.name, { ...toolArgs, _user_id: user_id, _constraint: activeConstraint })
+      // 埋点：工具调用
+      if (user_id) logAIEvent(user_id, session_id, 'tool_call', toolCall.function.name, { result_count: toolResult.ranked ? toolResult.ranked.length : undefined })
+      // 推理步骤：工具执行完成
+      sendReasoningStep(res, `执行工具：${toolCall.function.name}`, toolResult.filter_reason || '');
 
       // 购物车操作工具处理（add_to_cart / clear_cart / view_cart）
       const cartTools = new Set(['add_to_cart', 'clear_cart', 'view_cart']);
       if (cartTools.has(toolCall.function.name)) {
         // 发送购物车操作事件给前端
         sendEvent(res, { type: 'cart_action', data: toolResult });
+        // 埋点：推荐采纳（add_to_cart 表示用户采纳了推荐）
+        if (toolCall.function.name === 'add_to_cart' && user_id) {
+          logAIEvent(user_id, session_id, 'recommendation_adopted', 'add_to_cart', { food_ids: toolArgs.food_ids })
+        }
         // 将操作结果告知 LLM，让它生成自然语言确认
         const toolResultMsg = {
           role: 'tool',
@@ -1051,7 +1242,35 @@ export async function aiChat(req, res) {
     sendEvent(res, { type: 'done' });
     res.end();
 
-  } catch (err) {
+    // ── 异步：对话结束后生成记忆摘要并持久化 ──────────────────
+    if (user_id && messages && messages.length) {
+      setImmediate(async () => {
+        try {
+          const conversationText = messages.map(m => `${m.role}: ${typeof m.content === 'string' ? m.content : ''}`).join('\n')
+          const memResp = await openaiClient.chat.completions.create({
+            model: process.env.OPENAI_MODEL || 'deepseek-chat',
+            stream: false,
+            messages: [{
+              role: 'user',
+              content: `请将以下对话提炼为200字以内的摘要，并从中提取3-6个关键用户偏好词（如口味、菜系、价格偏好等），以JSON格式返回：{"summary":"...","key_prefs":["...","..."]}。\n\n对话记录：\n${conversationText.slice(0, 3000)}`
+            }],
+            temperature: 0.3
+          })
+          const raw = memResp.choices[0].message.content.trim()
+          const match = raw.match(/\{[\s\S]+\}/)
+          if (match) {
+            const { summary, key_prefs } = JSON.parse(match[0])
+            await MemoryLog.create({ user_id: Number(user_id), summary: summary || '', key_prefs: key_prefs || [], session_id, created_at: new Date() })
+            // 超5条则删最旧
+            const count = await MemoryLog.countDocuments({ user_id: Number(user_id) })
+            if (count > 5) {
+              const oldest = await MemoryLog.findOne({ user_id: Number(user_id) }).sort({ created_at: 1 }).lean()
+              if (oldest) await MemoryLog.deleteOne({ _id: oldest._id })
+            }
+          }
+        } catch (e) { /* 静默 */ }
+      })
+    }
     console.error('[AI] aiChat error:', err.message);
     try {
       sendEvent(res, { type: 'error', content: '服务暂时不可用，请稍后重试' });

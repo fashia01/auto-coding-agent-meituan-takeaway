@@ -179,6 +179,11 @@ const routes = [
     component: () => import('@/views/group_order/group_order.vue')
   },
   {
+    path: '/admin/ai_dashboard',
+    name: 'AI 决策分析',
+    component: () => import('@/views/admin/ai_dashboard.vue')
+  },
+  {
     path: '/:pathMatch(.*)*',
     redirect: '/error'
   }

@@ -32,8 +32,8 @@
     <div class="intro">
       <h3>更多推荐</h3>
       <ul>
-        <li v-for="(item, index) in introList" :key="index">
-          <div class="img"><img :src="item.picUrl"></div>
+        <li v-for="(item, index) in introList" :key="index" @click="item.url && routerChange(item.url)" :style="item.url ? 'cursor:pointer' : ''">
+          <div class="img"><img :src="item.picUrl" :alt="item.name"></div>
           <span>{{ item.name }}</span>
         </li>
       </ul>
@@ -129,7 +129,8 @@ const introList = [
   { picUrl: 'http://p0.meituan.net/50.0.100/xianfu/cf5ddfcae114ed8d7d147d51064532252477.jpg', name: '邀请有奖' },
   { picUrl: 'http://p1.meituan.net/50.0.100/xianfu/55748d5fa531a057258f68d029fe20542466.jpg', name: '商家入驻' },
   { picUrl: 'http://p1.meituan.net/50.0.100/xianfu/317aabdd31dfcfa1739149089a2e041a2780.jpg', name: '帮助与反馈' },
-  { picUrl: 'http://p0.meituan.net/50.0.100/xianfu/55454d4faaed6ad212b2b8a929edef372425.jpg', name: '在线客服' }
+  { picUrl: 'http://p0.meituan.net/50.0.100/xianfu/55454d4faaed6ad212b2b8a929edef372425.jpg', name: '在线客服' },
+  { picUrl: 'http://p1.meituan.net/50.0.100/xianfu/2c14b3425c7bf1f3d63d11f47a7ef9ea2230.jpg', name: 'AI 数据', url: '/admin/ai_dashboard' }
 ]
 
 function fileUpload(event) {

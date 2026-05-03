@@ -17,6 +17,7 @@ import MessageCtrl from '../controller/v1/message';
 import ActivityCtrl from '../controller/v1/activity';
 import PointsCtrl from '../controller/v1/points';
 import GroupOrderCtrl from '../controller/v1/group_order';
+import { getAnalytics } from '../controller/v1/ai_analytics';
 
 const router = express.Router();
 router.get('/suggestion', Cites.suggestion);               //地址位置搜索
@@ -81,6 +82,7 @@ router.delete('/collection', Auth.authUser, Collection.deleteCollection);   //�
 
 // AI 对话
 router.post('/ai/chat', Ai.aiChat);   // AI 智能推荐（SSE 流式）
+router.get('/ai/analytics', getAnalytics);  // AI 决策分析面板数据
 
 // 优惠券
 router.get('/coupon/available', Auth.authUser, Coupon.getAvailableCoupons);   // 获取可用优惠券
