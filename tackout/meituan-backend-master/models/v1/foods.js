@@ -1,7 +1,4 @@
 import mongoose from 'mongoose'
-import Category from './category'
-
-const Schema = mongoose.Schema;
 
 const foodsSchema = new mongoose.Schema({
     id: Number,

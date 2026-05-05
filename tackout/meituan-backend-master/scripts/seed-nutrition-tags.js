@@ -45,7 +45,7 @@ ${foodNames.map((n, i) => `${i+1}. ${n}`).join('\n')}
 
   const raw = resp.choices[0].message.content.trim()
   // 提取 JSON 数组
-  const match = raw.match(/\[[\s\S]+\]/)
+  const match = raw.match(/\[[\s\S]+]/)
   if (!match) throw new Error('LLM 未返回 JSON 数组: ' + raw.slice(0, 100))
   return JSON.parse(match[0])
 }

@@ -29,7 +29,7 @@ defineProps({
 const expanded = ref(false)
 </script>
 
-<style scoped>
+<style>
 .reasoning-trace {
   margin-top: 0.16rem;
   border-top: 1px solid #f0f0f0;

@@ -88,7 +88,7 @@ class Pay extends BaseClass {
                 timestamp: new Date().getTime() + '',
                 version: '1.0'
             }
-            let sign = ''
+            let sign
             if (method === 'trpay.trade.create.scan') {     //扫码支付
                 sign = this.sign(payData);
                 payData['sign'] = sign;

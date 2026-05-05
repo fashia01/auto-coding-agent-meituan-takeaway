@@ -17,7 +17,7 @@ defineProps({
 })
 </script>
 
-<style rel="stylesheet/scss" lang="scss" scoped>
+<style rel="stylesheet/scss" lang="scss">
 @import "../../../style/mixin.scss";
 
 .chat-bubble-wrap {

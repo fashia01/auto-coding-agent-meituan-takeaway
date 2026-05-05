@@ -782,7 +782,9 @@ ${JSON.stringify(foodSummaries, null, 2)}
     filtered_count: filterResult.filtered_count,
     filter_reason: filterResult.filter_reason
   };
-} ──────────────────────────────────────
+}
+
+// ── 饮食约束过滤辅助函数 ──────────────────────────────────────
 function applyDietaryFilter(foods, constraint) {
   if (!constraint) return { foods, filtered_count: 0, filter_reason: '' }
   const reasons = []
@@ -1257,7 +1259,7 @@ export async function aiChat(req, res) {
             temperature: 0.3
           })
           const raw = memResp.choices[0].message.content.trim()
-          const match = raw.match(/\{[\s\S]+\}/)
+          const match = raw.match(/\{[\s\S]+}/)
           if (match) {
             const { summary, key_prefs } = JSON.parse(match[0])
             await MemoryLog.create({ user_id: Number(user_id), summary: summary || '', key_prefs: key_prefs || [], session_id, created_at: new Date() })
@@ -1271,6 +1273,8 @@ export async function aiChat(req, res) {
         } catch (e) { /* 静默 */ }
       })
     }
+
+  } catch (err) {
     console.error('[AI] aiChat error:', err.message);
     try {
       sendEvent(res, { type: 'error', content: '服务暂时不可用，请稍后重试' });

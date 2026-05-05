@@ -157,10 +157,11 @@ async function addAllToCart() {
 
 function confirmCrossStore() {
   if (!crossStoreConflict.value) return
-  doAddItems(crossStoreConflict.value.items, true)
+  const items = crossStoreConflict.value.items
+  doAddItems(items, true)
   crossStoreConflict.value = null
   added.value = true
-  emit('added', crossStoreConflict.value ? crossStoreConflict.value.items : [])
+  emit('added', items)
 }
 </script>
 

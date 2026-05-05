@@ -151,7 +151,7 @@ async function sendMessage(text) {
       const targetFoods = lastFoodsMsg.foods
       // 解析"第N个"或"全部"
       let toAdd = targetFoods
-      const numMatch = text.match(/第([一1两2二三3四4五5六6七7八8九9十10]+)个/)
+      const numMatch = text.match(/第([一两二三四五六七八九十0-9]+)个/)
       if (numMatch) {
         const numMap = { '一':0,'1':0,'两':1,'二':1,'2':1,'三':2,'3':2,'四':3,'4':3,'五':4,'5':4 }
         const idx = numMap[numMatch[1]] ?? 0

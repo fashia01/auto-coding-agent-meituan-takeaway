@@ -350,7 +350,6 @@ class Order extends BaseClass {
   // 3.2 催单：仅允许催一次，重置当前阶段的剩余计时器（加速20%）
   async urgeOrder(req, res, next) {
     const { order_id } = req.body
-    const user_id = req.session.admin_id || req.session.user_id
     if (!order_id) {
       return res.send({ status: -1, message: '参数有误' })
     }
@@ -458,7 +457,6 @@ class Order extends BaseClass {
   // SSE 实时订阅订单状态
   async subscribeOrder(req, res, next) {
     const order_id = Number(req.params.order_id)
-    const user_id = req.session && (req.session.admin_id || req.session.user_id)
     if (!order_id) {
       return res.status(400).json({ status: -1, message: '参数有误' })
     }
