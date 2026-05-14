@@ -72,15 +72,26 @@ export default class BaseClass {
 
   //根据ip定位定位  只能获取到经纬度和省份城市  不能获取到具体位置 还需要调用下面接口获取具体位置
   async getLocation(req, res, next) {
-    let ip = req.ip;
-    const ipArr = ip.split(':');                    //切割字符串提取ip
-    ip = ipArr[ipArr.length - 1];
-    if (process.env.NODE_ENV == 'dev') {    //开发环境
-      ip = '113.105.128.251';
+    // 开发环境直接返回默认城市，跳过外部 API（避免 ENOTFOUND 错误）
+    if (process.env.NODE_ENV == 'dev') {
+      return {lat: 23.02067, lng: 113.75179, city: '东莞市'};
     }
+
+    let ip = req.ip ||
+             (req.connection && req.connection.remoteAddress) ||
+             (req.socket && req.socket.remoteAddress) ||
+             '';
+    if (ip) {
+      const ipArr = ip.split(':');   // 兼容 ::ffff:x.x.x.x 格式
+      ip = ipArr[ipArr.length - 1];
+    }
+    // 取不到有效 IP，直接降级
+    if (!ip || ip === '127.0.0.1' || ip === '::1') {
+      return {lat: 23.02067, lng: 113.75179, city: '东莞市'};
+    }
+
     try {
       let result;
-      //根据ip地址请求获取数据
       result = await this.fetch('http://apis.map.qq.com/ws/location/v1/ip', {
         ip,
         key: this.tencentkey,
@@ -91,36 +102,30 @@ export default class BaseClass {
           key: this.tencentkey2,
         })
       }
-
-      //status===0表示请求成功
       if (result.status === 0) {
         const cityInfo = {
-          lat: result.result.location.lat,    //纬度
-          lng: result.result.location.lng,    //经度
+          lat: result.result.location.lat,
+          lng: result.result.location.lng,
           city: result.result.ad_info.city,
         };
         cityInfo.city = cityInfo.city.replace(/市$/, '');
         return cityInfo;
       } else {
-        /* console.log('定位失败', result)
-         res.send({
-             status: -1,
-             message: '定位失败'
-         })*/
-        return {lat: 23.02067, lng: 113.75179, city: '东莞市'}
-
+        return {lat: 23.02067, lng: 113.75179, city: '东莞市'};
       }
     } catch (err) {
-      console.log('定位失败', err);
-      res.send({
-        status: -1,
-        message: '定位失败'
-      })
+      console.log('定位失败，使用默认位置', err.message || err);
+      return {lat: 23.02067, lng: 113.75179, city: '东莞市'};
     }
   }
 
   //根据经纬度获取详细地址信息
   async getDetailPosition(location, res, successFn) {
+    // 开发环境跳过外部 API，返回默认地址
+    if (process.env.NODE_ENV == 'dev') {
+      if (successFn) successFn({ address: '市体育路1号（默认）', location: location || {lat: 23.02067, lng: 113.75179} });
+      return;
+    }
     try {
       if (location) {
         let cityInfo = await this.fetch('http://apis.map.qq.com/ws/geocoder/v1', {
@@ -134,13 +139,11 @@ export default class BaseClass {
         });
       }
     } catch (err) {
-      console.log('获取位置失败', err);
-      res.send({
-        status: -1,
-        message: '获取定位失败'
-      })
+      console.log('获取位置失败', err.message || err);
+      // 降级：返回默认地址而不是 500
+      if (successFn) successFn({ address: '市体育路1号（定位失败）', location: location || {lat: 23.02067, lng: 113.75179} });
+      else if (res) res.send({ status: -1, message: '获取定位失败' })
     }
-
   }
 
   //根据关键词搜索位置
