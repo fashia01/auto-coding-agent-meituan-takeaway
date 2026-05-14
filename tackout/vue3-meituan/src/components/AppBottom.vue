@@ -38,7 +38,10 @@ watch(unreadCount, (val) => {
 
 async function fetchUnreadCount() {
   try {
-    const resp = await fetch(`${API_BASE}/v1/message/unread_count`, { credentials: 'include' })
+    const resp = await fetch(`${API_BASE}/v1/message/unread_count`, {
+      credentials: 'include',
+      cache: 'no-store'
+    })
     if (!resp.ok) return
     const json = await resp.json()
     unreadCount.value = (json.data && json.data.count) || 0
@@ -50,8 +53,17 @@ function startPolling() { fetchUnreadCount(); pollTimer = setInterval(fetchUnrea
 function stopPolling() { if (pollTimer) { clearInterval(pollTimer); pollTimer = null } }
 function handleVisibilityChange() { document.hidden ? stopPolling() : startPolling() }
 
-onMounted(() => { startPolling(); document.addEventListener('visibilitychange', handleVisibilityChange) })
-onUnmounted(() => { stopPolling(); document.removeEventListener('visibilitychange', handleVisibilityChange) })
+onMounted(() => {
+  startPolling()
+  document.addEventListener('visibilitychange', handleVisibilityChange)
+  // 消息被标记已读时立即刷新未读数，无需等待下次轮询
+  window.addEventListener('message-read', fetchUnreadCount)
+})
+onUnmounted(() => {
+  stopPolling()
+  document.removeEventListener('visibilitychange', handleVisibilityChange)
+  window.removeEventListener('message-read', fetchUnreadCount)
+})
 
 watch(
   () => route.path,

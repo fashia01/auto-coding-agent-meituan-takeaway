@@ -7,6 +7,7 @@ import { getUserTasteProfile } from './taste';
 import { writeTasteLog } from './taste';
 import { getCommentSummary } from './comment';
 import MessageModel from '../../models/v1/message';
+import { writeMessage } from './message';
 import ActivityModel from '../../models/v1/activity';
 import { PointsAccount } from '../../models/v1/points';
 import MemoryLog from '../../models/v1/memory_log';
@@ -1044,6 +1045,9 @@ export async function aiChat(req, res) {
         // 埋点：推荐采纳（add_to_cart 表示用户采纳了推荐）
         if (toolCall.function.name === 'add_to_cart' && user_id) {
           logAIEvent(user_id, session_id, 'recommendation_adopted', 'add_to_cart', { food_ids: toolArgs.food_ids })
+          // 写 AI 消息通知：引导用户回到 AI 页继续互动（点击可跳转）
+          const foodCount = (toolArgs.food_ids || []).length
+          writeMessage(user_id, 'ai', 'AI 帮您找到了推荐菜品 🤖', `根据您的喜好推荐了 ${foodCount} 道菜，已加入购物车。点击继续与 AI 对话，调整口味或追加菜品`, '', null)
         }
         // 将操作结果告知 LLM，让它生成自然语言确认
         const toolResultMsg = {

@@ -42,18 +42,23 @@ function joinRoom(room_id, user_id) {
 }
 
 /**
- * 更新成员菜品
+ * 更新成员菜品（若 user 不在房间则自动 join）
  */
-function updateItem(room_id, user_id, food_id, qty, name, price) {
+function updateItem(room_id, user_id, food_id, qty, name, price, foods_pic = '', spec = '') {
   const room = rooms.get(room_id)
   if (!room || room.status !== 'open') return { ok: false, error: 'ROOM_NOT_OPEN' }
-  if (!room.members[user_id]) return { ok: false, error: 'NOT_IN_ROOM' }
+
+  // 若用户不在房间（如从菜单页直接加菜），自动加入
+  if (!room.members[user_id]) {
+    room.members[user_id] = { user_id: Number(user_id), items: {} }
+    console.log(`[拼单] 用户 ${user_id} 自动加入房间 ${room_id}`)
+  }
 
   const items = room.members[user_id].items
   if (qty <= 0) {
     delete items[food_id]
   } else {
-    items[food_id] = { food_id, qty: Number(qty), name, price: Number(price) }
+    items[food_id] = { food_id, qty: Number(qty), name, price: Number(price), foods_pic, spec }
   }
   return { ok: true, room: sanitizeRoom(room) }
 }

@@ -64,6 +64,7 @@
 import { computed } from 'vue'
 import { useCartStore } from '@/stores'
 import { storeToRefs } from 'pinia'
+import { isCartFoodKey } from '@/utils/cart'
 
 const props = defineProps({
   action: { type: Object, required: true }
@@ -79,7 +80,7 @@ const cartItems = computed(() => {
   const items = []
   Object.values(cartList.value).forEach(rest => {
     Object.keys(rest).forEach(key => {
-      if (Number(key)) items.push(rest[key])
+      if (isCartFoodKey(key)) items.push(rest[key])
     })
   })
   return items

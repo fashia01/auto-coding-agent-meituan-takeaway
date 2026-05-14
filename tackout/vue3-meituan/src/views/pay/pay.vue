@@ -18,7 +18,7 @@
         <img :src="restaurant_info.pic_url">
       </div>
       <div class="info">
-        <span class="price">￥{{ 0.01 }}</span>
+        <span class="price">￥{{ order_info ? (Number(order_info.total_price) + Number(order_info.shipping_fee || 0)).toFixed(2) : '...' }}</span>
         <p>{{ restaurant_info.name }} -{{ order_id }}</p>
       </div>
     </div>
@@ -126,7 +126,11 @@ function submit() {
       return
     }
     if (method.value === 'trpay.trade.create.scan') {
-      orderData.value = response.data.data
+      // 把 restaurant_id 附加进去，供 scan.vue 支付成功后精准清空对应购物车
+      orderData.value = {
+        ...response.data.data,
+        restaurant_id: order_info.value?.restaurant_id
+      }
       scanShow.value = true
     } else {
       form_data.value = response.data.data

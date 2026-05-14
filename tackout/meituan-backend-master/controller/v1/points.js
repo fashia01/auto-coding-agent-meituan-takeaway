@@ -3,6 +3,7 @@ import BaseClass from '../../prototype/baseClass'
 import { PointsAccount, PointsLedger } from '../../models/v1/points'
 import UserCoupon from '../../models/v1/user_coupon'
 import CouponTemplate from '../../models/v1/coupon'
+import { writeMessage } from './message'
 
 // ── 等级定义 ─────────────────────────────────────────────────
 const LEVELS = [
@@ -39,8 +40,8 @@ async function awardPoints(user_id, amount, related_id) {
 
     // 查当前账户等级，计算加成
     const account = await PointsAccount.findOne({ user_id: uid }).lean()
-    const totalEarned = account ? account.total_earned : 0
-    const level = getLevel(totalEarned)
+    const totalEarnedBefore = account ? account.total_earned : 0
+    const level = getLevel(totalEarnedBefore)
     const earned = Math.ceil(amount * (1 + level.bonus))  // 加成后取整
 
     // 生成流水 id
@@ -48,12 +49,23 @@ async function awardPoints(user_id, amount, related_id) {
     const ledgerId = lastLedger ? lastLedger.id + 1 : 200001
 
     await PointsLedger.create({ id: ledgerId, user_id: uid, delta: earned, reason: 'order_reward', related_id: Number(related_id), created_at: new Date() })
-    await PointsAccount.findOneAndUpdate(
+    const updatedAccount = await PointsAccount.findOneAndUpdate(
       { user_id: uid },
       { $inc: { balance: earned, total_earned: earned }, $set: { updated_at: new Date() } },
-      { upsert: true }
+      { upsert: true, new: true }
     )
     console.log(`[积分] 用户 ${uid} 获得 ${earned} 积分（订单 ${related_id}）`)
+
+    // 发送系统消息：积分到账通知
+    writeMessage(uid, 'system', '积分到账通知 ⭐', `订单支付成功，获得 ${earned} 积分，当前余额 ${updatedAccount.balance} 积分`, '', null)
+
+    // 检查是否升级：比较前后等级
+    const totalEarnedAfter = updatedAccount.total_earned
+    const levelAfter = getLevel(totalEarnedAfter)
+    if (levelAfter.name !== level.name) {
+      // 发送系统消息：等级升级
+      writeMessage(uid, 'system', `恭喜升级！${levelAfter.icon} ${levelAfter.name}会员`, `您的累计积分已达 ${totalEarnedAfter}，成功升级为「${levelAfter.name}」会员，享受 ${(levelAfter.bonus * 100).toFixed(0)}% 积分加成！`, '', null)
+    }
   } catch (err) {
     console.log('[积分] awardPoints 失败:', err.message)
   }
@@ -195,6 +207,9 @@ class PointsController extends BaseClass {
         related_id: couponId,
         created_at: new Date()
       })
+
+      // 发送优惠券消息通知
+      writeMessage(uid, 'coupon', '积分兑换券到账 🎫', `您用 ${option.points} 积分兑换的「${option.label}」已发放到您的账户`, 'coupon', couponId)
 
       res.send({ status: 200, message: `兑换成功！${option.label}已发放到您的账户` })
     } catch (err) {

@@ -11,7 +11,7 @@
           <span>{{ item.name }} </span>
           <span class="price">￥{{ Number((item.price * item.num).toFixed(2)) }}</span>
           <food-selector
-            v-model="foodCount[item.id]"
+            :model-value="foodCount[item.id] || 0"
             @plus="addOne(item)"
             @minus="removeOne(item)"
             style="position:absolute;right:0;bottom:0.3rem;"
@@ -35,7 +35,11 @@
       <span class="submit" v-if="!totalPrice">{{ min_price_tip }}</span>
       <span class="submit" v-else-if="totalPrice < min_price">还差{{ min_price - totalPrice }}</span>
       <span class="submit closed-tip" v-else-if="isClosed">商家已打烊</span>
-      <span @click="prepareOrder()" class="submit go-buy" v-else>去结算</span>
+      <span v-else @click="prepareOrder()" class="submit go-buy">去结算</span>
+      <!-- 拼单按钮：独立显示，不依赖购物车数量 -->
+      <span @click="startGroupOrder()" class="submit group-btn">
+        {{ route.query.room ? '📋查看拼单' : '👥拼单' }}
+      </span>
     </div>
     <transition name="fade">
       <div class="shade" v-show="cartDetail" @click="cartDetail = false"></div>
@@ -50,6 +54,10 @@ import { storeToRefs } from 'pinia'
 import { useCartStore, useRestaurantStore } from '@/stores'
 import { getInfo } from '@/utils/auth'
 import { getBusinessStatus } from '@/utils/businessHours'
+import { isCartFoodKey } from '@/utils/cart'
+import { showToast } from 'vant'
+
+const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:3000'
 
 const route = useRoute()
 const router = useRouter()
@@ -71,7 +79,18 @@ const shipping_fee_tip = ref(0)
 const min_price = ref(0)
 const min_price_tip = ref('￥0起送')
 const iconCartContainer = ref(null)
-const foodCount = ref({})
+
+// foodCount 直接从 cart store 计算，与购物车实时同步
+const foodCount = computed(() => {
+  const map = {}
+  const cart = cartList.value[restaurant_id.value]
+  if (cart) {
+    for (const key in cart) {
+      if (isCartFoodKey(key)) map[key] = cart[key].num || 0
+    }
+  }
+  return map
+})
 
 const totalPrice = computed(() => {
   return cartList.value[restaurant_id.value] ? cartList.value[restaurant_id.value].totalPrice : 0
@@ -84,7 +103,7 @@ const restaurantCartList = computed(() => {
   if (!lists) return []
   const arr = []
   for (const p in lists) {
-    if (Number(p)) arr.push(lists[p])
+    if (isCartFoodKey(p)) arr.push(lists[p])
   }
   return arr
 })
@@ -112,13 +131,45 @@ function emptyCartAction() {
   cartDetail.value = false
 }
 
+async function startGroupOrder() {
+  if (!getInfo()) { router.push('/login'); return }
+  // 如果已在拼单房间中，点击按钮跳到拼单页查看
+  if (route.query.room) {
+    router.push({ path: '/group_order', query: { room: route.query.room, restaurant_id: restaurant_id.value } })
+    return
+  }
+  try {
+    const resp = await fetch(`${API_BASE}/v1/group_order`, {
+      method: 'POST', credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ restaurant_id: Number(restaurant_id.value) })
+    })
+    const json = await resp.json()
+    if (json.status === 200) {
+      const { room_id } = json.data
+      // 复制邀请链接（朋友打开此链接→拼单页→点「去选菜」→进入本菜单页并自动加入房间）
+      const inviteLink = `${window.location.origin}${window.location.pathname}#/group_order?room=${room_id}&restaurant_id=${restaurant_id.value}`
+      try { await navigator.clipboard.writeText(inviteLink) } catch (e) {}
+      showToast({ message: '🎉 拼单房间已创建！邀请链接已复制，继续选菜吧', position: 'bottom', duration: 2500 })
+      // 留在当前菜单页，URL 加上 room 参数进入拼单模式（不跳走）
+      router.replace({ path: '/store/menu', query: { id: restaurant_id.value, room: room_id } })
+    } else {
+      showToast({ message: json.message || '创建失败', position: 'bottom' })
+    }
+  } catch (e) {
+    showToast({ message: '网络错误', position: 'bottom' })
+  }
+}
+
 function addOne(item) {
   cartStore.addCart({
     restaurant_id: restaurant_id.value,
+    restaurant_name: poi_info.value ? poi_info.value.name : '',
+    pic_url: poi_info.value ? poi_info.value.pic_url : '',
     food_id: item.id,
     price: item.price,
     name: item.name,
-    foods_pic: item.foods_pic
+    foods_pic: item.foods_pic || ''
   })
 }
 
@@ -228,6 +279,7 @@ onMounted(() => {
       background: #2c2c2c;
       text-align: center;
       &.go-buy { color: #000; background: $mtYellow; }
+      &.group-btn { color: #f60; background: #fff3e0; font-size: 0.32rem; border-left: 1px solid #ffe0b2; }
       &.closed-tip { color: #fff; background: #bbb; cursor: not-allowed; font-size: 0.28rem; }
     }
   }

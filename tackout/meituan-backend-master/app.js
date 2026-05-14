@@ -11,6 +11,9 @@ import path from 'path';
 
 const app = express();
 
+// 信任本地代理，确保 req.ip 能正确取到客户端 IP（Node.js v25 兼容）
+app.set('trust proxy', true);
+
 app.use(express.static(path.join(__dirname, 'public')));
 
 let storage = multer.diskStorage({
@@ -34,9 +37,10 @@ app.all('*', (req, res, next) => {
   res.header("Access-Control-Allow-Methods", "PUT,POST,GET,DELETE,OPTIONS");
   res.header("Access-Control-Allow-Credentials", "true");
   res.header("X-Powered-By", '3.2.1');
-  res.header("Cache-Control", "public,max-age=60000");
+  // API 接口不缓存，避免浏览器缓存旧数据（如空购物车、空拼单商品）
+  res.header("Cache-Control", "no-store");
   if (req.method === 'OPTIONS') {
-    res.send(200);
+    res.sendStatus(200);  // 修复: res.send(200) 已废弃
   } else {
     next();
   }

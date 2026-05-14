@@ -42,20 +42,22 @@
         </span>
       </div>
       <ul class="food-list">
-        <li v-for="(item, key) in order_data" :key="key" v-if="Number(key)">
-          <div class="picture">
-            <img :src="item.foods_pic">
-          </div>
-          <div class="food-list-right-part">
-            <div>
-              <span class="name">{{ item.name }}</span>
-              <span class="price">￥{{ item.price }}</span>
+        <template v-for="(item, key) in order_data" :key="key">
+          <li v-if="isCartFoodKey(key)">
+            <div class="picture">
+              <img :src="item.foods_pic">
             </div>
-            <div>
-              <span class="count">x{{ item.num }}</span>
+            <div class="food-list-right-part">
+              <div>
+                <span class="name">{{ item.name }}</span>
+                <span class="price">￥{{ item.price }}</span>
+              </div>
+              <div>
+                <span class="count">x{{ item.num }}</span>
+              </div>
             </div>
-          </div>
-        </li>
+          </li>
+        </template>
       </ul>
       <ul class="other-fee-container">
         <li><span>包装费</span><span class="box-total-price">￥0</span></li>
@@ -108,6 +110,7 @@ import { useAddressStore } from '@/stores'
 import { getRestaurant } from '@/api/restaurant'
 import { getAllAddress } from '@/api/user'
 import { submitOrder, getAvailableCoupons } from '@/api/order'
+import { isCartFoodKey } from '@/utils/cart'
 import CouponSelector from '@/components/CouponSelector.vue'
 
 const router = useRouter()
@@ -177,7 +180,7 @@ function submit() {
   const foods = []
   const keys = Object.keys(order_data.value)
   keys.forEach((key) => {
-    if (Number(key)) foods.push({ skus_id: key, num: order_data.value[key]['num'] })
+    if (isCartFoodKey(key)) foods.push({ skus_id: key, num: order_data.value[key]['num'] })
   })
   submitOrder({
     restaurant_id: restaurant_id.value,

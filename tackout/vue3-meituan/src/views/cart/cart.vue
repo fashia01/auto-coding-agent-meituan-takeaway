@@ -37,45 +37,46 @@
         <span class="restaurant-name">{{ item.restaurant_name }}</span>
       </section>
 
-      <van-swipe-cell v-for="(food, foodKey) in item" :key="foodKey" v-if="Number(foodKey)">
-        <template #right>
-          <van-button square type="danger" text="删除" @click="deleteSingleFood(restaurant_id, foodKey)" />
-        </template>
-        <section class="main-container">
-          <div class="foods">
-            <span class="selected delete-selected"
-              v-if="editStatus && deleteSelectFood[restaurant_id] && deleteSelectFood[restaurant_id][foodKey] === true"
-              @click="cancelSelectDelete(restaurant_id, foodKey)">
-              <i class="iconfont">&#xe6da;</i>
-            </span>
-            <span class="select delete-select" v-else-if="editStatus" @click="selectDelete(restaurant_id, foodKey)"></span>
-            <span class="selected"
-              v-if="!editStatus && selectFood[restaurant_id] && selectFood[restaurant_id][foodKey] === true"
-              @click="cancelSelect(restaurant_id, foodKey)">
-              <i class="iconfont">&#xe6da;</i>
-            </span>
-            <span class="select" v-else-if="!editStatus" @click="select(restaurant_id, foodKey)"></span>
-            <div class="picture-container">
-              <img :src="food.foods_pic">
-            </div>
-            <div class="info">
-              <span class="name">{{ food.name }}</span>
-              <span v-if="food.spec" class="spec-tag">规格：{{ food.spec }}</span>
-              <div>
-                <span class="num">x{{ food.num }}</span>
-                <span class="price">￥{{ food.price }}</span>
+      <template v-for="(food, foodKey) in item" :key="foodKey">
+        <van-swipe-cell v-if="isCartFoodKey(foodKey)">
+          <template #right>
+            <van-button square type="danger" text="删除" @click="deleteSingleFood(restaurant_id, foodKey)" />
+          </template>
+          <section class="main-container">
+            <div class="foods">
+              <span class="selected delete-selected"
+                v-if="editStatus && deleteSelectFood[restaurant_id] && deleteSelectFood[restaurant_id][foodKey] === true"
+                @click="cancelSelectDelete(restaurant_id, foodKey)">
+                <i class="iconfont">&#xe6da;</i>
+              </span>
+              <span class="select delete-select" v-else-if="editStatus" @click="selectDelete(restaurant_id, foodKey)"></span>
+              <span class="selected"
+                v-if="!editStatus && selectFood[restaurant_id] && selectFood[restaurant_id][foodKey] === true"
+                @click="cancelSelect(restaurant_id, foodKey)">
+                <i class="iconfont">&#xe6da;</i>
+              </span>
+              <span class="select" v-else-if="!editStatus" @click="select(restaurant_id, foodKey)"></span>
+              <div class="picture-container">
+                <img :src="food.foods_pic">
+              </div>
+              <div class="info">
+                <span class="name">{{ food.name }}</span>
+                <span v-if="food.spec" class="spec-tag">规格：{{ food.spec }}</span>
+                <div>
+                  <span class="num">x{{ food.num }}</span>
+                  <span class="price">￥{{ food.price }}</span>
+                </div>
               </div>
             </div>
-          </div>
-        </section>
-      </van-swipe-cell>
+          </section>
+        </van-swipe-cell>
+      </template>
 
       <div class="bottom" v-show="!editStatus">
         <span class="submit"
           @click="submit(restaurant_id)"
           :class="{ active: !selectFood[restaurant_id] || !selectFood[restaurant_id]['totalPrice'] }">去结算
         </span>
-        <span class="group-btn" @click="startGroupOrder(restaurant_id)">👥 拼单</span>
         <span class="total-price">￥{{ selectFood[restaurant_id] ? selectFood[restaurant_id]['totalPrice'].toFixed(2) : '0.00' }}</span>
       </div>
     </article>
@@ -87,32 +88,32 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import { useCartStore } from '@/stores'
-import { showToast } from 'vant'
-
-const API_BASE = 'http://localhost:3000'
+import { isCartFoodKey } from '@/utils/cart'
 
 const router = useRouter()
 const cartStore = useCartStore()
 const { cartList } = storeToRefs(cartStore)
 
-const totalPrice = ref(0)
 const selectFood = reactive({})
 const deleteSelectFood = reactive({})
 const editStatus = ref(false)
-const emptyCart = ref(true)
+
+// 用 computed 实时响应购物车是否为空，避免 ref 初始值 true 导致空态闪烁
+const emptyCart = computed(() => !Object.keys(cartList.value).length)
 
 function init() {
-  emptyCart.value = !Object.keys(cartList.value).length
   Object.keys(cartList.value).forEach(restaurant_id => {
+    // 若该餐馆的 selectFood 已初始化过，跳过（避免重置用户的勾选状态）
+    if (selectFood[restaurant_id]) return
     selectFood[restaurant_id] = { allSelect: true, totalPrice: 0 }
     deleteSelectFood[restaurant_id] = { allSelect: false }
     const restaurant = cartList.value[restaurant_id]
     Object.keys(restaurant).forEach(data => {
-      if (Number(data)) {
+      if (isCartFoodKey(data)) {
         deleteSelectFood[restaurant_id][data] = false
         selectFood[restaurant_id][data] = true
         selectFood[restaurant_id]['totalPrice'] += Number(restaurant[data]['price']) * Number(restaurant[data]['num'])
@@ -120,6 +121,11 @@ function init() {
     })
   })
 }
+
+// cartList 变化时重新初始化（处理从菜单页加菜后回到购物车的情况）
+watch(cartList, () => {
+  init()
+}, { deep: true })
 
 function cancelSelect(restaurant_id, foodKey) {
   selectFood[restaurant_id][foodKey] = false
@@ -156,13 +162,13 @@ function isAllSelect(newObj) {
 function allSelect(restaurant_id, boolean) {
   selectFood[restaurant_id]['allSelect'] = boolean
   Object.keys(selectFood[restaurant_id]).forEach(el => {
-    if (Number(el)) selectFood[restaurant_id][el] = boolean
+    if (isCartFoodKey(el)) selectFood[restaurant_id][el] = boolean
   })
   if (boolean) {
     selectFood[restaurant_id]['totalPrice'] = 0
     const restaurant = cartList.value[restaurant_id]
     Object.keys(restaurant).forEach(el => {
-      if (Number(el)) selectFood[restaurant_id]['totalPrice'] += restaurant[el]['num'] * restaurant[el]['price']
+      if (isCartFoodKey(el)) selectFood[restaurant_id]['totalPrice'] += restaurant[el]['num'] * restaurant[el]['price']
     })
   } else {
     selectFood[restaurant_id]['totalPrice'] = 0
@@ -172,7 +178,7 @@ function allSelect(restaurant_id, boolean) {
 function allSelectDelete(restaurant_id, boolean) {
   deleteSelectFood[restaurant_id]['allSelect'] = boolean
   Object.keys(deleteSelectFood[restaurant_id]).forEach(el => {
-    if (Number(el)) deleteSelectFood[restaurant_id][el] = boolean
+    if (isCartFoodKey(el)) deleteSelectFood[restaurant_id][el] = boolean
   })
 }
 
@@ -180,7 +186,7 @@ function submit(restaurant_id) {  if (!selectFood[restaurant_id] || !selectFood[
   const restaurant = selectFood[restaurant_id]
   const foods = { totalPrice: 0, totalNum: 0 }
   Object.keys(restaurant).forEach(el => {
-    if (Number(el) && restaurant[el]) {
+    if (isCartFoodKey(el) && restaurant[el]) {
       const food = cartList.value[restaurant_id][el]
       foods[el] = food
       foods['totalPrice'] += food.num * food.price
@@ -196,7 +202,7 @@ function deleteCart() {
   Object.keys(deleteSelectFood).forEach((restaurant_id) => {
     const restaurant = deleteSelectFood[restaurant_id]
     Object.keys(restaurant).forEach(food_id => {
-      if (Number(food_id) && restaurant[food_id]) {
+      if (isCartFoodKey(food_id) && restaurant[food_id]) {
         cartStore.deleteFood({ restaurant_id, food_id })
         delete selectFood[restaurant_id][food_id]
       }
@@ -205,40 +211,17 @@ function deleteCart() {
     })
   })
   editStatus.value = false
-  emptyCart.value = !Object.keys(cartList.value).length
+  // emptyCart 是 computed，自动响应 cartList 变化，无需手动赋值
 }
 
 function deleteSingleFood(restaurant_id, food_id) {
   cartStore.deleteFood({ restaurant_id, food_id })
-  emptyCart.value = !Object.keys(cartList.value).length
+  // emptyCart 是 computed，自动更新
 }
 
 onMounted(() => {
   init()
 })
-
-async function startGroupOrder(restaurant_id) {
-  try {
-    const resp = await fetch(`${API_BASE}/v1/group_order`, {
-      method: 'POST', credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ restaurant_id: Number(restaurant_id) })
-    })
-    const json = await resp.json()
-    if (json.status === 200) {
-      const { room_id } = json.data
-      // 复制分享链接
-      const link = `${window.location.origin}${window.location.pathname}#/group_order?room=${room_id}`
-      try { await navigator.clipboard.writeText(link) } catch (e) {}
-      showToast({ message: `🎉 拼单房间已创建！链接已复制`, position: 'bottom', duration: 3000 })
-      router.push({ path: '/group_order', query: { room: room_id } })
-    } else {
-      showToast({ message: json.message || '创建失败', position: 'bottom' })
-    }
-  } catch (e) {
-    showToast({ message: '网络错误', position: 'bottom' })
-  }
-}
 </script>
 
 <style rel="stylesheet/scss" lang="scss" scoped>
@@ -301,12 +284,6 @@ async function startGroupOrder(restaurant_id) {
       margin-right: 0.1rem; text-align: center; font-size: 0.5rem; background: $mtYellow;
       display: inline-block; @include px2rem(width, 186); @include px2rem(line-height, 68);
       &.active { background: $mtGrey; }
-    }
-    .group-btn {
-      margin-right: 0.1rem; text-align: center; font-size: 0.36rem;
-      background: #fff3e0; color: #f60; border: 1px solid #f60;
-      display: inline-block; @include px2rem(width, 140); @include px2rem(line-height, 68);
-      cursor: pointer; border-radius: 0.06rem;
     }
   }
   .btn-delete {

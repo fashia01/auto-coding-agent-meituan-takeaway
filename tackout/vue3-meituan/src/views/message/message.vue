@@ -39,6 +39,7 @@
       </van-tab>
     </van-tabs>
   </div>
+  <v-bottom></v-bottom>
 </template>
 
 <script setup>
@@ -83,7 +84,10 @@ async function fetchMessages(reset = false) {
   loading.value = true
   try {
     const cat = activeTab.value ? `&category=${activeTab.value}` : ''
-    const resp = await fetch(`${API_BASE}/v1/message/list?page=${page.value}${cat}`, { credentials: 'include' })
+    const resp = await fetch(`${API_BASE}/v1/message/list?page=${page.value}${cat}`, {
+      credentials: 'include',
+      cache: 'no-store'
+    })
     const json = await resp.json()
     const list = json.data || []
     messages.value = reset ? list : [...messages.value, ...list]
@@ -98,16 +102,32 @@ function onLoad() { fetchMessages() }
 watch(activeTab, () => fetchMessages(true), { immediate: true })
 
 async function handleMsgClick(msg) {
-  // 标记已读
+  // 标记已读：找到下标，通过下标更新响应式数组，确保视图正确刷新
   if (!msg.is_read) {
-    msg.is_read = true
-    fetch(`${API_BASE}/v1/message/${msg.id}/read`, { method: 'POST', credentials: 'include' })
+    const idx = messages.value.findIndex(m => m.id === msg.id)
+    if (idx !== -1) messages.value[idx] = { ...messages.value[idx], is_read: true }
+    await fetch(`${API_BASE}/v1/message/${msg.id}/read`, { method: 'POST', credentials: 'include' })
+    // 通知底部 tab bar 立即刷新未读数气泡
+    window.dispatchEvent(new CustomEvent('message-read'))
   }
   // 跳转关联页面
-  if (msg.related_type === 'order' && msg.related_id) {
-    router.push(`/order_detail?id=${msg.related_id}`)
-  } else if (msg.related_type === 'coupon') {
+  if (msg.category === 'order' || (msg.related_type === 'order' && msg.related_id)) {
+    if (msg.related_id) router.push(`/order_detail?id=${msg.related_id}`)
+    else router.push('/order')
+  } else if (msg.category === 'coupon' || msg.related_type === 'coupon') {
     router.push('/coupon')
+  } else if (msg.category === 'ai') {
+    // AI 消息：跳转到 AI 智能点餐页，让用户主动互动
+    router.push('/ai_chat')
+  } else if (msg.category === 'system') {
+    // 系统消息：根据内容关键词智能路由
+    const content = (msg.title + msg.content).toLowerCase()
+    if (content.includes('积分') || content.includes('等级') || content.includes('会员')) {
+      router.push('/home')   // 积分/等级 → 个人中心
+    } else if (content.includes('优惠') || content.includes('活动') || content.includes('公告')) {
+      router.push('/index')  // 活动 → 首页
+    }
+    // 安全提醒等无需跳转，留在消息页即可
   }
 }
 
@@ -115,6 +135,8 @@ async function handleReadAll() {
   await fetch(`${API_BASE}/v1/message/read_all`, { method: 'POST', credentials: 'include' })
   messages.value = messages.value.map(m => ({ ...m, is_read: true }))
   showToast({ message: '全部已读', position: 'bottom' })
+  // 通知底部 tab bar 立即刷新未读数气泡
+  window.dispatchEvent(new CustomEvent('message-read'))
 }
 </script>
 

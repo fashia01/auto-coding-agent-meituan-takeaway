@@ -1,5 +1,9 @@
 <template>
   <div id="menu">
+    <!-- 拼单模式提示条 -->
+    <div v-if="route.query.room" class="group-mode-banner" @click="backToGroupOrder">
+      👥 拼单模式 · 你的加购会自动同步到房间 · 点击返回拼单页 →
+    </div>
     <div class="left">
       <ul>
         <li
@@ -26,7 +30,7 @@
                 <span class="price">￥{{ spus.skus[0].price }}</span>
               </div>
               <food-selector
-                v-model="foodCount[spus.skus[0].id]"
+                :model-value="foodCount[spus.skus[0].id] || 0"
                 @plus="openSpecModal(spus)"
                 @minus="reduceFoodFromCart(spus)"
               />
@@ -48,17 +52,23 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, nextTick } from 'vue'
-import { useRoute } from 'vue-router'
-import { showDialog } from 'vant'
-import { useCartStore, useRestaurantStore } from '@/stores'
+import { ref, reactive, computed, onMounted, nextTick } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { showDialog, showToast } from 'vant'
+import { storeToRefs } from 'pinia'
+import { useCartStore, useRestaurantStore, useGroupOrderStore } from '@/stores'
 import { getFoods } from '@/api/restaurant'
+import { isCartFoodKey } from '@/utils/cart'
 import Bottom from './bottom.vue'
 import FoodSpecModal from '@/components/FoodSpecModal.vue'
 
+const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:3000'
 const route = useRoute()
+const router = useRouter()
 const cartStore = useCartStore()
 const restaurantStore = useRestaurantStore()
+const groupOrderStore = useGroupOrderStore()
+const { cartList } = storeToRefs(cartStore)
 
 const foodsData = ref([])
 const getInfoReady = ref(false)
@@ -67,7 +77,20 @@ const rightRef = ref(null)
 const categorysRef = ref(null)
 const sectionRefs = reactive([])
 const categoryPositions = ref([])
-const foodCount = reactive({})
+
+// foodCount 直接从 cart store 实时计算，是唯一数据源
+// 菜单页步进器、底部浮层步进器全部从这里读，无需手动同步
+const foodCount = computed(() => {
+  const restaurant_id = route.query.id
+  const map = {}
+  const cart = cartList.value[restaurant_id]
+  if (cart) {
+    for (const key in cart) {
+      if (isCartFoodKey(key)) map[key] = cart[key].num || 0
+    }
+  }
+  return map
+})
 
 // 规格弹窗状态
 const specModalShow = ref(false)
@@ -97,7 +120,14 @@ async function onSpecConfirm({ sku, num }) {
         spec: sku.spec || sku.description || ''
       })
     }
-    foodCount[sku.id] = (foodCount[sku.id] || 0) + num
+    // foodCount 是 computed，会自动从 cart store 更新，无需手动赋值
+    // 若当前处于拼单房间中，同步更新房间菜品（数量从 cart store 读）
+    const cartItem = cartStore.cartList[restaurant_id] && cartStore.cartList[restaurant_id][sku.id]
+    const currentQty = cartItem ? cartItem.num : 0
+    syncGroupOrderItem(sku.id, currentQty, specModalFood.value.name, sku.price, {
+      foods_pic: specModalFood.value.pic_url,
+      spec: sku.spec || sku.description || ''
+    })
   }
 
   try {
@@ -125,10 +155,52 @@ async function onSpecConfirm({ sku, num }) {
 
 function reduceFoodFromCart(spus) {
   const restaurant_id = route.query.id
-  cartStore.reduceCart({
-    restaurant_id,
-    food_id: spus.skus[0].id
+  const food_id = spus.skus[0].id
+  cartStore.reduceCart({ restaurant_id, food_id })
+  // foodCount 是 computed，会自动从 cart store 更新，无需手动赋值
+  // 若在拼单房间，同步减少（数量从 cart store 读）
+  const cartItem = cartStore.cartList[restaurant_id] && cartStore.cartList[restaurant_id][food_id]
+  const newQty = cartItem ? cartItem.num : 0
+  syncGroupOrderItem(food_id, newQty, spus.name, spus.skus[0].price, {
+    foods_pic: spus.pic_url,
+    spec: spus.skus[0].spec || spus.skus[0].description || ''
   })
+}
+
+// 若携带 room 参数，将加购操作同步到拼单房间
+async function syncGroupOrderItem(food_id, qty, name, price, extra = {}) {
+  const room_id = route.query.room
+  if (!room_id) return
+  try {
+    const resp = await fetch(`${API_BASE}/v1/group_order/${room_id}/item`, {
+      method: 'PUT', credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        food_id,
+        qty: Number(qty),
+        name,
+        price: Number(price),
+        foods_pic: extra.foods_pic || '',
+        spec: extra.spec || ''
+      })
+    })
+    const json = await resp.json()
+    if (json.status === 200) {
+      if (qty > 0) showToast({ message: '✅ 已加入拼单', position: 'bottom', duration: 1000 })
+      // 通知拼单页立即刷新（Pinia 跨组件通信，同 SPA 内实时生效）
+      groupOrderStore.notifyUpdate(room_id)
+    } else {
+      console.log('[拼单同步] 失败:', json.message)
+    }
+  } catch (e) { /* 静默 */ }
+}
+
+function backToGroupOrder() {
+  const room_id = route.query.room
+  const restaurant_id = route.query.id
+  if (room_id) {
+    router.push({ path: '/group_order', query: { room: room_id, restaurant_id } })
+  }
 }
 
 function scrollToCategory(index) {
@@ -223,5 +295,19 @@ onMounted(() => {
       }
     }
   }
+}
+
+.group-mode-banner {
+  position: fixed;
+  top: 1rem; left: 0; right: 0;
+  z-index: 200;
+  background: linear-gradient(90deg, #ffd161, #ffb700);
+  color: #333;
+  font-size: 0.24rem;
+  font-weight: 500;
+  text-align: center;
+  padding: 0.14rem 0.3rem;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
 }
 </style>

@@ -21,8 +21,8 @@ class Push {
     try {
       const result = await checkPushRules(String(user_id))
       if (result) {
-        // 同时写入消息中心（持久化）
-        writeMessage(user_id, 'ai', 'AI 为您准备了建议 🤖', result.message, '', null)
+        // 写入消息中心：引导用户点击跳转到 AI 页面互动（不直接帮用户下单）
+        writeMessage(user_id, 'ai', 'AI 有新的推荐想告诉你 🤖', result.message + ' 点击进入 AI 点餐，让我帮你挑选', '', null)
         return res.send({
           has_push: true,
           message: result.message,

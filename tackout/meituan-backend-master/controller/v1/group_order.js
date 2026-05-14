@@ -46,9 +46,9 @@ class GroupOrderController extends BaseClass {
     const user_id = req.session && (req.session.admin_id || req.session.user_id)
     if (!user_id) return res.send({ status: -1, message: '未登录' })
     const { id } = req.params
-    const { food_id, qty, name, price } = req.body
+    const { food_id, qty, name, price, foods_pic = '', spec = '' } = req.body
     if (!food_id) return res.send({ status: -1, message: '缺少 food_id' })
-    const result = updateItem(id, user_id, food_id, qty, name, price)
+    const result = updateItem(id, user_id, food_id, qty, name, price, foods_pic, spec)
     if (!result.ok) return res.send({ status: -1, message: result.error })
     res.send({ status: 200, data: result.room })
   }
@@ -73,16 +73,24 @@ class GroupOrderController extends BaseClass {
     if (!result.foods.length) return res.send({ status: -1, message: '还没有人选菜' })
 
     try {
+      // 若未传 address_id，自动取用户第一个地址
+      const adminUser = await AdminModel.findOne({ id: Number(user_id) }).lean()
+      let resolvedAddressId = address_id
+      if (!resolvedAddressId && adminUser) {
+        // Address.user_id 存的是数字 id，不是 ObjectId
+        const defaultAddr = await AddressModel.findOne({ user_id: adminUser.id }).lean()
+        if (defaultAddr) resolvedAddressId = defaultAddr._id
+      }
+
       // 查询必要信息并生成合并订单
-      const [restaurant, address, adminUser, order_id] = await Promise.all([
+      const [restaurant, address, order_id] = await Promise.all([
         RestaurantModel.findOne({ id: Number(result.restaurant_id) }).lean(),
-        AddressModel.findById(address_id).lean(),
-        AdminModel.findOne({ id: Number(user_id) }).lean(),
+        resolvedAddressId ? AddressModel.findById(resolvedAddressId).lean() : Promise.resolve(null),
         this.getId('order_id')
       ])
 
       if (!restaurant) return res.send({ status: -1, message: '餐馆不存在' })
-      if (!address) return res.send({ status: -1, message: '收货地址不存在' })
+      if (!address) return res.send({ status: -1, message: '请先设置收货地址' })
 
       // 批量查菜品价格（按 food_id）
       const foodIds = result.foods.map(f => Number(f.food_id))

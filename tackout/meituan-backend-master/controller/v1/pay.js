@@ -57,6 +57,18 @@ class Pay extends BaseClass {
                 await OrderModel.updateOne({id: order_id}, {status: '支付成功', code: 200});
                 // 标记优惠券已使用
                 await markCouponUsed(order_id);
+                // 支付成功立即发放积分（1元=1积分，不等到送达）
+                try {
+                    const order = await OrderModel.findOne({id: order_id}).lean()
+                    if (order && order.total_price && order.user_id) {
+                        const admin = await AdminModel.findOne({_id: order.user_id}).lean()
+                        if (admin && admin.id) {
+                            await awardPoints(admin.id, Math.floor(order.total_price), order_id)
+                        }
+                    }
+                } catch (e) {
+                    console.log('[积分] 支付后发放失败:', e.message)
+                }
                 // 启动订单状态机链式推进
                 scheduleDelivery(order_id);
 
@@ -176,7 +188,8 @@ class Pay extends BaseClass {
             delete noticeData.sign;
             let verifySign = this.sign(noticeData)
             console.log('verifySign === sign', verifySign === sign)
-            if (verifySign === sign && noticeData.status === '2') {
+        // 真实支付回调中也补发积分（支付宝/微信真实支付场景）
+        if (verifySign === sign && noticeData.status === '2') {
                 let pay = await PayModel.findOne({id: noticeData.outTradeNo});
                 pay.status = '支付成功';
                 pay.code = 200;
@@ -187,6 +200,18 @@ class Pay extends BaseClass {
                 await Order.save();
                 // 标记优惠券已使用
                 await markCouponUsed(pay.order_id);
+                // 发放积分
+                try {
+                    const order = await OrderModel.findOne({id: pay.order_id}).lean()
+                    if (order && order.total_price && order.user_id) {
+                        const admin = await AdminModel.findOne({_id: order.user_id}).lean()
+                        if (admin && admin.id) {
+                            await awardPoints(admin.id, Math.floor(order.total_price), pay.order_id)
+                        }
+                    }
+                } catch (e) {
+                    console.log('[积分] 真实支付后发放失败:', e.message)
+                }
                 res.send(200);
             }
         } catch (err) {
@@ -338,7 +363,6 @@ function scheduleDelivery(order_id) {
         try {
             const order = await OrderModel.findOne({ id: order_id })
             if (order) {
-                // 从所有菜品的 tag_list 合并标签（逗号分隔字符串 → 去重数组）
                 const tagSet = new Set()
                 const prices = []
                 ;(order.foods || []).forEach(f => {
@@ -353,37 +377,29 @@ function scheduleDelivery(order_id) {
                     max: Math.max(...prices),
                     avg: +(prices.reduce((a, b) => a + b, 0) / prices.length).toFixed(2)
                 } : null
-                // user_id 存的是 ObjectId，需用数字 id；从 session 无法取得，用 order 的 restaurant_id 作为关联
                 const userId = order.user_id ? order.user_id.toString() : null
                 await writeTasteLog(userId, tags, priceRange, order.restaurant_id, 'order_delivered')
-            }
-            // 发放积分（1元=1积分，等级加成在 awardPoints 内计算）
-            if (order.total_price && userId) {
-                const admin = await AdminModel.findOne({ _id: order.user_id }).lean().catch(() => null)
-                if (admin && admin.id) {
-                    await awardPoints(admin.id, Math.floor(order.total_price), order_id)
 
-                    // 邀请奖励：首单送达时检查 pending 邀请关系，双方各发满20减5券
-                    try {
+                // 邀请奖励：首单送达时检查 pending 邀请关系，双方各发满20减5券
+                try {
+                    const admin = await AdminModel.findOne({ _id: order.user_id }).lean()
+                    if (admin && admin.id) {
                         const invite = await Invite.findOne({ invitee_id: admin.id, status: 'pending' }).lean()
                         if (invite) {
-                            // 检查是否真是首单（订单计数=1）
                             const prevOrders = await OrderModel.countDocuments({ user_id: order.user_id })
                             if (prevOrders <= 1) {
                                 const now = new Date()
                                 const expireAt = new Date(now.getTime() + 30 * 86400000)
                                 const lastCoupon = await UserCoupon.findOne().sort({ id: -1 }).lean()
                                 let nextId = (lastCoupon ? lastCoupon.id : 90000) + 1
-                                // 给被邀请人发券
                                 await UserCoupon.create({ id: nextId++, user_id: admin.id, template_id: 1001, status: 'unused', expire_at: expireAt, claimed_at: now, source: 'invite_reward' })
-                                // 给邀请人发券
                                 await UserCoupon.create({ id: nextId, user_id: invite.inviter_id, template_id: 1001, status: 'unused', expire_at: expireAt, claimed_at: now, source: 'invite_reward' })
                                 await Invite.updateOne({ _id: invite._id }, { $set: { status: 'rewarded' } })
                                 console.log(`[邀请奖励] inviter=${invite.inviter_id} invitee=${admin.id} 各发满20减3券`)
                             }
                         }
-                    } catch (e) { console.log('[邀请奖励] 失败:', e.message) }
-                }
+                    }
+                } catch (e) { console.log('[邀请奖励] 失败:', e.message) }
             }
         } catch (err) {
             console.log('[状态机] writeTasteLog on delivered failed:', err.message)

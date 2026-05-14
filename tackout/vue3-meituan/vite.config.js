@@ -27,4 +27,15 @@ export default defineConfig({
     port: 8080,
     open: false,
   },
+  css: {
+    preprocessorOptions: {
+      scss: {
+        // 全局注入 mixin，所有 .vue 文件无需手动 @import
+        // 使用 @use 替代 @import，消除 Dart Sass deprecation warning
+        additionalData: `@use "@/style/mixin.scss" as *;`,
+        // 静默 Dart Sass 废弃警告，保持终端输出干净
+        silenceDeprecations: ['import', 'slash-div', 'global-builtin'],
+      },
+    },
+  },
 })

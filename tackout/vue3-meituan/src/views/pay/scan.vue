@@ -28,8 +28,10 @@ import { ref, watch, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import QRCode from '@/plugins/qrcode'
 import { listenStatus } from '@/api/order'
+import { useCartStore } from '@/stores'
 
 const router = useRouter()
+const cartStore = useCartStore()
 
 const props = defineProps({
   payType: { type: String, default: '1' },
@@ -58,6 +60,11 @@ function listenStatusFn(outTradeNo) {
     listenStatus({ outTradeNo }).then((response) => {
       if (response.data.status === 200) {
         clearInterval(timer)
+        // 支付成功：仅清空本次结算的餐馆购物车
+        const rid = props.orderData?.restaurant_id
+        if (rid) {
+          cartStore.emptyCart({ restaurant_id: String(rid) })
+        }
         alertText.value = '支付成功，准备跳转'
         showTip.value = true
         setTimeout(() => {
@@ -75,6 +82,11 @@ function mockPayment(countdown = 5) {
     countdown--
     if (countdown <= 0) {
       clearInterval(timer)
+      // 模拟支付成功：仅清空本次结算的餐馆购物车
+      const rid = props.orderData?.restaurant_id
+      if (rid) {
+        cartStore.emptyCart({ restaurant_id: String(rid) })
+      }
       alertText.value = '支付成功，准备跳转'
       showTip.value = true
       setTimeout(() => {

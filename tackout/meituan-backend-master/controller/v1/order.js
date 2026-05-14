@@ -11,6 +11,7 @@ import { writeTasteLog } from './taste'
 import { subscribe, unsubscribe, broadcast } from '../../utils/orderSubscriptions'
 import { PointsAccount } from '../../models/v1/points'
 import { deductPoints } from './points'
+import { writeMessage } from './message'
 
 class Order extends BaseClass {
   constructor() {
@@ -110,6 +111,18 @@ class Order extends BaseClass {
           const uid = Number(values[2].id)
           deductPoints(uid, points_to_deduct, values[3])
         }
+        // 写入消息中心：订单已创建
+        try {
+          const uid = Number(values[2].id)
+          if (uid) {
+            writeMessage(
+              uid, 'order',
+              '订单已提交，等待支付',
+              `你在【${restaurant.name}】的订单（¥${order_data.total_price.toFixed(2)}）已提交，请在15分钟内完成支付。`,
+              'order', values[3]
+            )
+          }
+        } catch (e) { /* 消息写入失败不影响下单 */ }
         res.send({
           status: 200,
           message: '提交订单成功，请尽快支付',
